@@ -1,5 +1,4 @@
 'use client'
-
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase-browser'
 import { useRouter } from 'next/navigation'
@@ -16,9 +15,21 @@ export default function LoginPage() {
     e.preventDefault()
     setError(null)
     setLoading(true)
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
-    if (error) { setError('Email o contraseña incorrectos'); setLoading(false); return }
-    router.push('/vales')
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+    if (error || !data.user) { setError('Email o contraseña incorrectos'); setLoading(false); return }
+
+    // Buscar el rol del usuario para decidir a dónde va
+    const { data: perfil } = await supabase
+      .from('users')
+      .select('role')
+      .eq('id', data.user.id)
+      .single()
+
+    if (perfil?.role === 'chofer') {
+      router.push('/ruta')
+    } else {
+      router.push('/vales')
+    }
     router.refresh()
   }
 
