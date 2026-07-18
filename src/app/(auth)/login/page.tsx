@@ -37,7 +37,7 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--bg)' }}>
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <h1 className="text-5xl font-medium tracking-tight" style={{ fontFamily: "'Fraunces', serif", color: 'var(--ink)' }}>VaPal</h1>
+          <h1 className="text-5xl font-medium tracking-tight" style={{ fontFamily: "'Fraunces', serif", color: 'var(--ink)' }}><img src="/VaPal__logo.png" alt="VaPal" style={{width:'200px',margin:'0 auto 1rem'}} /><span style={{display:'none'}}>VaPal</span></h1>
           <p className="mt-2 text-sm" style={{ color: 'var(--muted)' }}>Trazabilidad de pallets</p>
         </div>
         <div className="rounded-md p-6" style={{ background: 'var(--surface)' }}>

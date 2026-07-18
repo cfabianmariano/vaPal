@@ -1,7 +1,9 @@
 'use client'
-import { useEffect, useState, useRef, useCallback } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase-browser'
+import { useOnline } from '@/lib/use-online'
+import { leerRutaLocal, guardarRemitoLocal, leerRemitoLocal, borrarRemitoLocal, encolarAccion } from '@/lib/offline-store'
 
 function distanciaMetros(lat1: number, lng1: number, lat2: number, lng2: number) {
   const R = 6371000
@@ -31,6 +33,16 @@ function comprimirFoto(file: File): Promise<Blob> {
     img.src = URL.createObjectURL(file)
   })
 }
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve) => {
+    const reader = new FileReader()
+    reader.onloadend = () => {
+      const result = reader.result as string
+      resolve(result.split(',')[1])
+    }
+    reader.readAsDataURL(blob)
+  })
+}
 
 // ========== COMPONENTE FIRMA ==========
 function PadFirma({ onConfirmar, onLimpiar }: { onConfirmar: (blob: Blob) => void; onLimpiar?: () => void }) {
@@ -51,34 +63,21 @@ function PadFirma({ onConfirmar, onLimpiar }: { onConfirmar: (blob: Blob) => voi
     e.preventDefault()
     const ctx = canvasRef.current!.getContext('2d')!
     const pos = getPos(e)
-    ctx.beginPath()
-    ctx.moveTo(pos.x, pos.y)
-    setDibujando(true)
-    setHayTrazo(true)
+    ctx.beginPath(); ctx.moveTo(pos.x, pos.y)
+    setDibujando(true); setHayTrazo(true)
   }
-
   const mover = (e: React.TouchEvent | React.MouseEvent) => {
-    if (!dibujando) return
-    e.preventDefault()
+    if (!dibujando) return; e.preventDefault()
     const ctx = canvasRef.current!.getContext('2d')!
     const pos = getPos(e)
-    ctx.lineTo(pos.x, pos.y)
-    ctx.strokeStyle = '#1E2A38'
-    ctx.lineWidth = 2
-    ctx.lineCap = 'round'
-    ctx.lineJoin = 'round'
-    ctx.stroke()
+    ctx.lineTo(pos.x, pos.y); ctx.strokeStyle = '#1E2A38'; ctx.lineWidth = 2; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.stroke()
   }
-
   const terminar = () => setDibujando(false)
-
   const limpiar = () => {
     const canvas = canvasRef.current!
     canvas.getContext('2d')!.clearRect(0, 0, canvas.width, canvas.height)
-    setHayTrazo(false)
-    onLimpiar?.()
+    setHayTrazo(false); onLimpiar?.()
   }
-
   const confirmar = () => {
     canvasRef.current!.toBlob((blob) => { if (blob) onConfirmar(blob) }, 'image/png')
   }
@@ -111,6 +110,7 @@ export default function DetalleClientePage() {
   const { lineaId } = useParams<{ lineaId: string }>()
   const router = useRouter()
   const supabase = createClient()
+  const online = useOnline()
 
   const [linea, setLinea] = useState<any>(null)
   const [remitoActivo, setRemitoActivo] = useState<any>(null)
@@ -119,7 +119,6 @@ export default function DetalleClientePage() {
   const [error, setError] = useState<string | null>(null)
   const [alertaFuera, setAlertaFuera] = useState<{ lat: number; lng: number; distancia: number } | null>(null)
 
-  // Formulario retiro
   const [buenos, setBuenos] = useState(0)
   const [recuperar, setRecuperar] = useState(0)
   const [scrap, setScrap] = useState(0)
@@ -130,73 +129,112 @@ export default function DetalleClientePage() {
   const fileRef = useRef<HTMLInputElement>(null)
   const [alertaSinFoto, setAlertaSinFoto] = useState(false)
 
-  // Firma
   const [firmaNombre, setFirmaNombre] = useState('')
   const [subiendoFirma, setSubiendoFirma] = useState(false)
 
   const total = buenos + recuperar + scrap
 
   useEffect(() => {
-    async function cargar() {
-      const { data } = await supabase
-        .from('vale_lineas')
-        .select(`
-          id, cantidad_autorizada, cantidad_retirada, estado,
-          clientes ( id, nombre, direccion, localidad, gps_lat, gps_lng, geocerca_radio ),
-          vales ( id, numero )
-        `)
-        .eq('id', lineaId)
-        .single()
-      setLinea(data)
-
-      const { data: remito } = await supabase
-        .from('remitos')
-        .select('id, fichada_entrada_at, geocerca_ok, cantidad_buenos, cantidad_recuperar, cantidad_scrap, cantidad_total, foto_url, firma_url, firma_nombre, estado')
-        .eq('vale_linea_id', lineaId)
-        .eq('estado', 'en_curso')
-        .maybeSingle()
-
-      // Si no hay en_curso, buscar firmado/no_conformado reciente (por si volvió atrás)
-      if (!remito) {
-        const { data: cerrado } = await supabase
-          .from('remitos')
-          .select('id, fichada_entrada_at, geocerca_ok, cantidad_buenos, cantidad_recuperar, cantidad_scrap, cantidad_total, foto_url, firma_url, firma_nombre, estado, fichada_salida_at')
-          .eq('vale_linea_id', lineaId)
-          .in('estado', ['firmado', 'no_conformado'])
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle()
-        if (cerrado && !cerrado.fichada_salida_at) {
-          setRemitoActivo(cerrado)
-        }
-      } else {
-        setRemitoActivo(remito)
-      }
-
-      if (remito && remito.cantidad_total > 0) {
-        setBuenos(remito.cantidad_buenos || 0)
-        setRecuperar(remito.cantidad_recuperar || 0)
-        setScrap(remito.cantidad_scrap || 0)
-      }
-      if (remito?.firma_nombre) setFirmaNombre(remito.firma_nombre)
-      setCargando(false)
-    }
     cargar()
   }, [lineaId])
 
+  async function cargar() {
+    // Intentar cargar desde servidor
+    if (navigator.onLine) {
+      try {
+        const { data } = await supabase
+          .from('vale_lineas')
+          .select(`id, cantidad_autorizada, cantidad_retirada, estado,
+            clientes ( id, nombre, direccion, localidad, gps_lat, gps_lng, geocerca_radio, contacto_email, contacto_nombre ),
+            vales ( id, numero )`)
+          .eq('id', lineaId)
+          .single()
+        if (data) {
+          setLinea(data)
+          // Buscar remito activo
+          const { data: remito } = await supabase
+            .from('remitos')
+            .select('id, fichada_entrada_at, geocerca_ok, cantidad_buenos, cantidad_recuperar, cantidad_scrap, cantidad_total, foto_url, firma_url, firma_nombre, estado, fichada_salida_at')
+            .eq('vale_linea_id', lineaId)
+            .eq('estado', 'en_curso')
+            .maybeSingle()
+          if (!remito) {
+            const { data: cerrado } = await supabase
+              .from('remitos')
+              .select('id, fichada_entrada_at, geocerca_ok, cantidad_buenos, cantidad_recuperar, cantidad_scrap, cantidad_total, foto_url, firma_url, firma_nombre, estado, fichada_salida_at')
+              .eq('vale_linea_id', lineaId)
+              .in('estado', ['firmado', 'no_conformado'])
+              .order('created_at', { ascending: false })
+              .limit(1)
+              .maybeSingle()
+            if (cerrado && !cerrado.fichada_salida_at) setRemitoActivo(cerrado)
+          } else {
+            setRemitoActivo(remito)
+          }
+          if (remito && remito.cantidad_total > 0) {
+            setBuenos(remito.cantidad_buenos || 0); setRecuperar(remito.cantidad_recuperar || 0); setScrap(remito.cantidad_scrap || 0)
+          }
+          if (remito?.firma_nombre) setFirmaNombre(remito.firma_nombre)
+          setCargando(false)
+          return
+        }
+      } catch (e) {
+        console.warn('[visita] Error cargando del servidor:', e)
+      }
+    }
+
+    // Offline: leer de IndexedDB
+    try {
+      const rutaLocal = await leerRutaLocal()
+      const lineaLocal = rutaLocal.find((l: any) => l.id === lineaId)
+      if (lineaLocal) setLinea(lineaLocal)
+
+      const remitoLocal = await leerRemitoLocal(lineaId)
+      if (remitoLocal) {
+        setRemitoActivo(remitoLocal)
+        if (remitoLocal.cantidad_total > 0) {
+          setBuenos(remitoLocal.cantidad_buenos || 0); setRecuperar(remitoLocal.cantidad_recuperar || 0); setScrap(remitoLocal.cantidad_scrap || 0)
+        }
+        if (remitoLocal.firma_nombre) setFirmaNombre(remitoLocal.firma_nombre)
+      }
+    } catch (e) {
+      console.warn('[visita] Error cargando local:', e)
+    }
+    setCargando(false)
+  }
+
   // ========== FICHADA ==========
   async function crearRemito(lat: number, lng: number, geocercaOk: boolean) {
-    const { data: { user } } = await supabase.auth.getUser()
-    const anio = new Date().getFullYear()
-    const { count } = await supabase.from('remitos').select('id', { count: 'exact', head: true })
-    const numero = `REM-${anio}-${String((count ?? 0) + 1).padStart(4, '0')}`
-    const { data: remito, error: err } = await supabase.from('remitos').insert({
-      numero, vale_linea_id: lineaId, chofer_id: user!.id,
-      estado: 'en_curso', gps_lat: lat, gps_lng: lng,
-      geocerca_ok: geocercaOk, fichada_entrada_at: new Date().toISOString(),
-    }).select().single()
-    if (err) { setError(`No se pudo registrar la fichada: ${err.message}`); setFichando(false); return }
-    setAlertaFuera(null); setRemitoActivo(remito); setFichando(false)
+    const ahora = new Date().toISOString()
+    if (online) {
+      const { data: { user } } = await supabase.auth.getUser()
+      const anio = new Date().getFullYear()
+      const { count } = await supabase.from('remitos').select('id', { count: 'exact', head: true })
+      const numero = `REM-${anio}-${String((count ?? 0) + 1).padStart(4, '0')}`
+      const { data: remito, error: err } = await supabase.from('remitos').insert({
+        numero, vale_linea_id: lineaId, chofer_id: user!.id,
+        estado: 'en_curso', gps_lat: lat, gps_lng: lng,
+        geocerca_ok: geocercaOk, fichada_entrada_at: ahora,
+      }).select().single()
+      if (err) { setError(`No se pudo registrar la fichada: ${err.message}`); setFichando(false); return }
+      setAlertaFuera(null); setRemitoActivo(remito); setFichando(false)
+    } else {
+      // Offline: guardar localmente + encolar
+      const remitoLocal = {
+        id: `local-${Date.now()}`, fichada_entrada_at: ahora,
+        geocerca_ok: geocercaOk, gps_lat: lat, gps_lng: lng,
+        estado: 'en_curso', cantidad_buenos: 0, cantidad_recuperar: 0,
+        cantidad_scrap: 0, cantidad_total: 0, foto_url: null,
+        firma_url: null, firma_nombre: null,
+      }
+      await guardarRemitoLocal(lineaId, remitoLocal)
+      await encolarAccion({
+        tipo: 'crear_remito', lineaId,
+        datos: { gps_lat: lat, gps_lng: lng, geocerca_ok: geocercaOk, fichada_entrada_at: ahora },
+        creadoAt: ahora,
+      })
+      setAlertaFuera(null); setRemitoActivo(remitoLocal); setFichando(false)
+    }
   }
 
   async function ficharLlegada() {
@@ -229,22 +267,41 @@ export default function DetalleClientePage() {
     if (!foto && !forzarSinFoto && !remitoActivo?.foto_url) { setAlertaSinFoto(true); return }
     setError(null); setGuardando(true); setAlertaSinFoto(false)
 
-    let fotoUrl = remitoActivo?.foto_url || null
-    if (foto) {
-      const blob = await comprimirFoto(foto)
-      const path = `${remitoActivo.id}.jpg`
-      const { error: upErr } = await supabase.storage.from('remito-fotos').upload(path, blob, { contentType: 'image/jpeg', upsert: true })
-      if (upErr) { setError(`Error foto: ${upErr.message}`); setGuardando(false); return }
-      fotoUrl = supabase.storage.from('remito-fotos').getPublicUrl(path).data.publicUrl
+    if (online) {
+      let fotoUrl = remitoActivo?.foto_url || null
+      if (foto) {
+        const blob = await comprimirFoto(foto)
+        const path = `${remitoActivo.id}.jpg`
+        const { error: upErr } = await supabase.storage.from('remito-fotos').upload(path, blob, { contentType: 'image/jpeg', upsert: true })
+        if (upErr) { setError(`Error foto: ${upErr.message}`); setGuardando(false); return }
+        fotoUrl = supabase.storage.from('remito-fotos').getPublicUrl(path).data.publicUrl
+      }
+      const { error: updErr } = await supabase.from('remitos').update({
+        cantidad_buenos: buenos, cantidad_recuperar: recuperar,
+        cantidad_scrap: scrap, cantidad_total: total,
+        ...(fotoUrl ? { foto_url: fotoUrl } : {}),
+      }).eq('id', remitoActivo.id)
+      if (updErr) { setError(`Error: ${updErr.message}`); setGuardando(false); return }
+      setRemitoActivo({ ...remitoActivo, cantidad_total: total, cantidad_buenos: buenos, cantidad_recuperar: recuperar, cantidad_scrap: scrap, foto_url: fotoUrl })
+    } else {
+      // Offline
+      let fotoBase64 = null
+      if (foto) {
+        const blob = await comprimirFoto(foto)
+        fotoBase64 = await blobToBase64(blob)
+      }
+      const remitoLocal = {
+        ...remitoActivo, cantidad_buenos: buenos, cantidad_recuperar: recuperar,
+        cantidad_scrap: scrap, cantidad_total: total, fotoBase64,
+      }
+      await guardarRemitoLocal(lineaId, remitoLocal)
+      await encolarAccion({
+        tipo: 'guardar_retiro', lineaId,
+        datos: { buenos, recuperar, scrap, total, fotoBase64 },
+        creadoAt: new Date().toISOString(),
+      })
+      setRemitoActivo(remitoLocal)
     }
-
-    const { error: updErr } = await supabase.from('remitos').update({
-      cantidad_buenos: buenos, cantidad_recuperar: recuperar,
-      cantidad_scrap: scrap, cantidad_total: total,
-      ...(fotoUrl ? { foto_url: fotoUrl } : {}),
-    }).eq('id', remitoActivo.id)
-    if (updErr) { setError(`Error: ${updErr.message}`); setGuardando(false); return }
-    setRemitoActivo({ ...remitoActivo, cantidad_total: total, cantidad_buenos: buenos, cantidad_recuperar: recuperar, cantidad_scrap: scrap, foto_url: fotoUrl })
     setGuardando(false)
   }
 
@@ -253,23 +310,43 @@ export default function DetalleClientePage() {
     setSubiendoFirma(true); setError(null)
     if (!firmaNombre.trim()) { setError('Ingresá el nombre de quien firma.'); setSubiendoFirma(false); return }
 
-    const path = `${remitoActivo.id}.png`
-    const { error: upErr } = await supabase.storage.from('remito-firmas').upload(path, blob, { contentType: 'image/png', upsert: true })
-    if (upErr) { setError(`Error firma: ${upErr.message}`); setSubiendoFirma(false); return }
-    const firmaUrl = supabase.storage.from('remito-firmas').getPublicUrl(path).data.publicUrl
-
-    const { error: updErr } = await supabase.from('remitos').update({
-      firma_url: firmaUrl, firma_nombre: firmaNombre.trim(), estado: 'firmado',
-    }).eq('id', remitoActivo.id)
-    if (updErr) { setError(`Error: ${updErr.message}`); setSubiendoFirma(false); return }
-    setRemitoActivo({ ...remitoActivo, firma_url: firmaUrl, firma_nombre: firmaNombre.trim(), estado: 'firmado' })
+    if (online) {
+      const path = `${remitoActivo.id}.png`
+      const { error: upErr } = await supabase.storage.from('remito-firmas').upload(path, blob, { contentType: 'image/png', upsert: true })
+      if (upErr) { setError(`Error firma: ${upErr.message}`); setSubiendoFirma(false); return }
+      const firmaUrl = supabase.storage.from('remito-firmas').getPublicUrl(path).data.publicUrl
+      const { error: updErr } = await supabase.from('remitos').update({
+        firma_url: firmaUrl, firma_nombre: firmaNombre.trim(), estado: 'firmado',
+      }).eq('id', remitoActivo.id)
+      if (updErr) { setError(`Error: ${updErr.message}`); setSubiendoFirma(false); return }
+      setRemitoActivo({ ...remitoActivo, firma_url: firmaUrl, firma_nombre: firmaNombre.trim(), estado: 'firmado' })
+    } else {
+      const firmaBase64 = await blobToBase64(blob)
+      const remitoLocal = { ...remitoActivo, firma_nombre: firmaNombre.trim(), estado: 'firmado', firmaBase64 }
+      await guardarRemitoLocal(lineaId, remitoLocal)
+      await encolarAccion({
+        tipo: 'firmar', lineaId,
+        datos: { firmaNombre: firmaNombre.trim(), firmaBase64 },
+        creadoAt: new Date().toISOString(),
+      })
+      setRemitoActivo(remitoLocal)
+    }
     setSubiendoFirma(false)
   }
 
   async function marcarNoConformado() {
     setSubiendoFirma(true); setError(null)
-    const { error: updErr } = await supabase.from('remitos').update({ estado: 'no_conformado' }).eq('id', remitoActivo.id)
-    if (updErr) { setError(`Error: ${updErr.message}`); setSubiendoFirma(false); return }
+    if (online) {
+      const { error: updErr } = await supabase.from('remitos').update({ estado: 'no_conformado' }).eq('id', remitoActivo.id)
+      if (updErr) { setError(`Error: ${updErr.message}`); setSubiendoFirma(false); return }
+    } else {
+      const remitoLocal = { ...remitoActivo, estado: 'no_conformado' }
+      await guardarRemitoLocal(lineaId, remitoLocal)
+      await encolarAccion({
+        tipo: 'no_conformado', lineaId, datos: {},
+        creadoAt: new Date().toISOString(),
+      })
+    }
     setRemitoActivo({ ...remitoActivo, estado: 'no_conformado' })
     setSubiendoFirma(false)
   }
@@ -280,23 +357,76 @@ export default function DetalleClientePage() {
     const ahora = new Date()
     const entrada = new Date(remitoActivo.fichada_entrada_at)
     const estadiaMin = Math.round((ahora.getTime() - entrada.getTime()) / 60000)
-
-    const { error: err1 } = await supabase.from('remitos').update({
-      fichada_salida_at: ahora.toISOString(), estadia_minutos: estadiaMin,
-    }).eq('id', remitoActivo.id)
-    if (err1) { setError(`Error: ${err1.message}`); setCerrando(false); return }
-
     const nuevaRetirada = (linea.cantidad_retirada ?? 0) + remitoActivo.cantidad_total
-    const nuevoEstado = nuevaRetirada >= linea.cantidad_autorizada ? 'completa' : 'parcial'
-    await supabase.from('vale_lineas').update({ cantidad_retirada: nuevaRetirada, estado: nuevoEstado }).eq('id', lineaId)
+    const nuevoEstadoLinea = nuevaRetirada >= linea.cantidad_autorizada ? 'completa' : 'parcial'
 
-    if (linea.vales.id) {
-      const { data: todasLineas } = await supabase.from('vale_lineas').select('estado').eq('vale_id', linea.vales.id)
-      if (todasLineas) {
-        const todas = todasLineas.every((l: any) => l.estado === 'completa')
-        const alguna = todasLineas.some((l: any) => l.estado !== 'pendiente')
-        await supabase.from('vales').update({ estado: todas ? 'completo' : alguna ? 'en_curso' : 'asignado' }).eq('id', linea.vales.id)
+    if (online) {
+      const { error: err1 } = await supabase.from('remitos').update({
+        fichada_salida_at: ahora.toISOString(), estadia_minutos: estadiaMin,
+      }).eq('id', remitoActivo.id)
+      if (err1) { setError(`Error: ${err1.message}`); setCerrando(false); return }
+      await supabase.from('vale_lineas').update({ cantidad_retirada: nuevaRetirada, estado: nuevoEstadoLinea }).eq('id', lineaId)
+
+      if (linea.vales?.id) {
+        const { data: todasLineas } = await supabase.from('vale_lineas').select('estado').eq('vale_id', linea.vales.id)
+        if (todasLineas) {
+          const todas = todasLineas.every((l: any) => l.estado === 'completa')
+          const alguna = todasLineas.some((l: any) => l.estado !== 'pendiente')
+          await supabase.from('vales').update({ estado: todas ? 'completo' : alguna ? 'en_curso' : 'asignado' }).eq('id', linea.vales.id)
+        }
       }
+
+      // Enviar comprobante por email (best-effort, no bloquea el cierre)
+      if (linea.clientes?.contacto_email) {
+        try {
+          const { data: userData } = await supabase.auth.getUser()
+          const { data: userProfile } = await supabase.from('users').select('nombre, transportista_id').eq('id', userData.user!.id).single()
+          let transportistaNombre = ''
+          if (userProfile?.transportista_id) {
+            const { data: transp } = await supabase.from('transportistas').select('nombre').eq('id', userProfile.transportista_id).single()
+            transportistaNombre = transp?.nombre || ''
+          }
+          fetch('/api/email-comprobante', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              clienteNombre: linea.clientes.nombre,
+              clienteEmail: linea.clientes.contacto_email,
+              choferNombre: userProfile?.nombre || '',
+              transportistaNombre,
+              valeNumero: linea.vales?.numero || '',
+              cantidadBuenos: remitoActivo.cantidad_buenos,
+              cantidadRecuperar: remitoActivo.cantidad_recuperar,
+              cantidadScrap: remitoActivo.cantidad_scrap,
+              cantidadTotal: remitoActivo.cantidad_total,
+              cantidadAutorizada: linea.cantidad_autorizada,
+              cantidadRetiradaAcumulada: nuevaRetirada,
+              fichadaEntrada: remitoActivo.fichada_entrada_at,
+              fichadaSalida: ahora.toISOString(),
+              estadiaMinutos: estadiaMin,
+              estado: remitoActivo.estado,
+              firmaNombre: remitoActivo.firma_nombre,
+            }),
+          }).catch((emailErr) => console.warn('Email no enviado:', emailErr))
+        } catch (emailErr) {
+          console.warn('Email no enviado:', emailErr)
+        }
+      }
+
+    } else {
+      // Offline: encolar todo el cierre
+      let nuevoEstadoVale = null
+      if (linea.vales?.id) nuevoEstadoVale = 'en_curso' // No podemos saber el estado real de las otras líneas offline
+      await encolarAccion({
+        tipo: 'cerrar_visita', lineaId,
+        datos: {
+          fichada_salida_at: ahora.toISOString(), estadia_minutos: estadiaMin,
+          nueva_cantidad_retirada: nuevaRetirada, nuevo_estado_linea: nuevoEstadoLinea,
+          vale_id: linea.vales?.id, nuevo_estado_vale: nuevoEstadoVale,
+        },
+        creadoAt: ahora.toISOString(),
+      })
+      await borrarRemitoLocal(lineaId)
     }
     router.push('/ruta'); router.refresh()
   }
@@ -315,9 +445,16 @@ export default function DetalleClientePage() {
     <div>
       <button onClick={() => router.push('/ruta')} className="text-xs uppercase tracking-wider mb-4" style={{ color: 'var(--muted)' }}>← Mi ruta</button>
 
+      {!online && (
+        <div className="rounded-md p-3 mb-4 text-center text-xs font-semibold uppercase tracking-wider"
+          style={{ background: '#FFF3E0', color: '#E65100', border: '1px solid #FFB74D' }}>
+          ⚠ Sin señal — los datos se guardarán localmente
+        </div>
+      )}
+
       {/* Cabecera */}
       <div className="rounded-md p-4 mb-4" style={{ background: 'var(--surface)', border: '1px solid var(--line)' }}>
-        <div className="text-xs font-mono mb-1" style={{ color: 'var(--muted)' }}>{linea.vales.numero}</div>
+        <div className="text-xs font-mono mb-1" style={{ color: 'var(--muted)' }}>{(linea.vales as any)?.numero || linea.vales?.numero}</div>
         <h2 className="text-xl font-medium tracking-tight" style={{ fontFamily: "'Fraunces', serif", color: 'var(--ink)' }}>{linea.clientes.nombre}</h2>
         <p className="text-sm mt-1" style={{ color: 'var(--muted)' }}>
           {linea.clientes.direccion}{linea.clientes.localidad ? ` · ${linea.clientes.localidad}` : ''}
@@ -328,7 +465,7 @@ export default function DetalleClientePage() {
         </div>
       </div>
 
-      {/* ===== FICHAR LLEGADA ===== */}
+      {/* FICHAR LLEGADA */}
       {!remitoActivo && !alertaFuera && (
         <>
           <button onClick={ficharLlegada} disabled={fichando}
@@ -340,7 +477,7 @@ export default function DetalleClientePage() {
         </>
       )}
 
-      {/* ===== ALERTA GEOCERCA ===== */}
+      {/* ALERTA GEOCERCA */}
       {alertaFuera && (
         <div className="rounded-md overflow-hidden" style={{ border: '2px solid #B3261E' }}>
           <div className="p-4 text-center" style={{ background: '#B3261E' }}>
@@ -362,7 +499,7 @@ export default function DetalleClientePage() {
         </div>
       )}
 
-      {/* ===== FORMULARIO DE RETIRO ===== */}
+      {/* FORMULARIO DE RETIRO */}
       {remitoActivo && !retiroGuardado && (
         <div className="rounded-md p-4" style={{ background: 'var(--surface)', border: '1px solid var(--line)' }}>
           <div className="flex items-center gap-2 mb-4 pb-3" style={{ borderBottom: '1px solid var(--line)' }}>
@@ -458,7 +595,7 @@ export default function DetalleClientePage() {
         </div>
       )}
 
-      {/* ===== PASO 3: FIRMA DEL CLIENTE ===== */}
+      {/* FIRMA DEL CLIENTE */}
       {esperaFirma && (
         <div className="rounded-md p-4" style={{ background: 'var(--surface)', border: '1px solid var(--line)' }}>
           <div className="flex items-center gap-2 mb-1">
@@ -468,30 +605,25 @@ export default function DetalleClientePage() {
           <p className="text-xs mb-4" style={{ color: 'var(--muted)' }}>
             Buenos: {remitoActivo.cantidad_buenos} · A recuperar: {remitoActivo.cantidad_recuperar} · Scrap: {remitoActivo.cantidad_scrap}
           </p>
-
           <div className="text-xs font-bold uppercase tracking-wider mb-3" style={{ color: 'var(--muted)', borderTop: '1px solid var(--line)', paddingTop: '1rem' }}>
             Firma del responsable
           </div>
-
           <div className="mb-3">
             <label className="block text-xs mb-1" style={{ color: 'var(--muted)' }}>Nombre de quien firma</label>
             <input type="text" value={firmaNombre} onChange={(e) => setFirmaNombre(e.target.value)} placeholder="Nombre y apellido"
               className="w-full px-3 py-2.5 rounded text-sm outline-none"
               style={{ background: 'var(--bg)', border: '1px solid var(--line)', color: 'var(--ink)' }} />
           </div>
-
           {subiendoFirma ? (
             <div className="text-center py-4 text-sm" style={{ color: 'var(--muted)' }}>Guardando firma…</div>
           ) : (
             <PadFirma onConfirmar={confirmarFirma} />
           )}
-
           {error && (
             <div className="p-3 rounded-md text-center mt-3" style={{ background: '#FDECEA', border: '2px solid #B3261E' }}>
               <p className="text-sm font-bold" style={{ color: '#B3261E' }}>{error}</p>
             </div>
           )}
-
           <div className="mt-4 pt-3" style={{ borderTop: '1px solid var(--line)' }}>
             <button onClick={marcarNoConformado} disabled={subiendoFirma}
               className="w-full py-3 rounded-md text-xs font-semibold uppercase tracking-wider"
@@ -505,7 +637,7 @@ export default function DetalleClientePage() {
         </div>
       )}
 
-      {/* ===== PASO 4: CERRAR VISITA ===== */}
+      {/* CERRAR VISITA */}
       {listoParaCerrar && (
         <div className="rounded-md p-4" style={{ background: 'var(--surface)', border: '1px solid var(--line)' }}>
           <div className="flex items-center gap-2 mb-1">
@@ -526,13 +658,11 @@ export default function DetalleClientePage() {
               Sin firma — registrado como no conformado
             </div>
           )}
-
           {error && (
             <div className="p-3 rounded-md text-center mb-3" style={{ background: '#FDECEA', border: '2px solid #B3261E' }}>
               <p className="text-sm font-bold" style={{ color: '#B3261E' }}>{error}</p>
             </div>
           )}
-
           <button onClick={cerrarVisita} disabled={cerrando}
             className="w-full py-4 rounded-md text-sm font-bold uppercase tracking-wider text-white transition-opacity"
             style={{ background: 'var(--ink)', opacity: cerrando ? 0.6 : 1 }}>

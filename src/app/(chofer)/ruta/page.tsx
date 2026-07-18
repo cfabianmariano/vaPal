@@ -1,50 +1,119 @@
-import { createClient } from '@/lib/supabase-server'
+'use client'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import { createClient } from '@/lib/supabase-browser'
+import { useOnline } from '@/lib/use-online'
+import { guardarRutaLocal, leerRutaLocal } from '@/lib/offline-store'
 
-export default async function RutaPage() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+export default function RutaPage() {
+  const supabase = createClient()
+  const online = useOnline()
+  const [lineas, setLineas] = useState<any[] | null>(null)
+  const [visitaActiva, setVisitaActiva] = useState<any>(null)
+  const [cargando, setCargando] = useState(true)
+  const [origen, setOrigen] = useState<'servidor' | 'local' | null>(null)
 
-  const { data: perfil } = await supabase
-    .from('users')
-    .select('transportista_id')
-    .eq('id', user!.id)
-    .single()
+  useEffect(() => {
+    cargarRuta()
+  }, [])
 
-  // Líneas de vales con trabajo pendiente
-  const { data: lineas } = await supabase
-    .from('vale_lineas')
-    .select(`
-      id, cantidad_autorizada, cantidad_retirada, estado, orden_ruta,
-      clientes ( id, nombre, direccion, localidad ),
-      vales!inner ( id, numero, estado, transportista_id )
-    `)
-    .eq('vales.transportista_id', perfil!.transportista_id)
-    .in('vales.estado', ['asignado', 'en_curso', 'parcial'])
-    .neq('estado', 'completa')
-    .order('orden_ruta', { ascending: true })
+  // Reintentar cargar del servidor cuando vuelve la señal
+  useEffect(() => {
+    if (online && origen === 'local') {
+      cargarRuta()
+    }
+  }, [online])
 
-  // ¿Hay algún remito en curso? (visita abierta sin cerrar)
-  let visitaActiva: any = null
-  if (lineas && lineas.length > 0) {
-    const lineaIds = lineas.map((l: any) => l.id)
-    const { data: remitosEnCurso } = await supabase
-      .from('remitos')
-      .select('id, vale_linea_id, fichada_entrada_at')
-      .in('vale_linea_id', lineaIds)
-      .eq('estado', 'en_curso')
-      .limit(1)
-      .maybeSingle()
-    visitaActiva = remitosEnCurso
+  async function cargarRuta() {
+    if (navigator.onLine) {
+      try {
+        const datos = await cargarDesdeServidor()
+        if (datos) {
+          setLineas(datos.lineas)
+          setVisitaActiva(datos.visitaActiva)
+          setOrigen('servidor')
+          // Guardar en IndexedDB para uso offline
+          if (datos.lineas && datos.lineas.length > 0) {
+            await guardarRutaLocal(datos.lineas)
+          }
+          setCargando(false)
+          return
+        }
+      } catch (e) {
+        console.warn('[ruta] Error cargando del servidor, intentando local:', e)
+      }
+    }
+
+    // Sin señal o error: leer de IndexedDB
+    try {
+      const local = await leerRutaLocal()
+      if (local.length > 0) {
+        setLineas(local)
+        setOrigen('local')
+      } else {
+        setLineas([])
+        setOrigen('local')
+      }
+    } catch {
+      setLineas([])
+      setOrigen('local')
+    }
+    setCargando(false)
+  }
+
+  async function cargarDesdeServidor() {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return null
+
+    const { data: perfil } = await supabase
+      .from('users')
+      .select('transportista_id')
+      .eq('id', user.id)
+      .single()
+    if (!perfil) return null
+
+    const { data: lineasDB } = await supabase
+      .from('vale_lineas')
+      .select(`
+        id, cantidad_autorizada, cantidad_retirada, estado, orden_ruta,
+        clientes ( id, nombre, direccion, localidad, gps_lat, gps_lng, geocerca_radio ),
+        vales!inner ( id, numero, estado, transportista_id )
+      `)
+      .eq('vales.transportista_id', perfil.transportista_id)
+      .in('vales.estado', ['asignado', 'en_curso', 'parcial'])
+      .neq('estado', 'completa')
+      .order('orden_ruta', { ascending: true })
+
+    let activa = null
+    if (lineasDB && lineasDB.length > 0) {
+      const lineaIds = lineasDB.map((l: any) => l.id)
+      const { data: remitosEnCurso } = await supabase
+        .from('remitos')
+        .select('id, vale_linea_id, fichada_entrada_at')
+        .in('vale_linea_id', lineaIds)
+        .eq('estado', 'en_curso')
+        .limit(1)
+        .maybeSingle()
+      activa = remitosEnCurso
+    }
+
+    return { lineas: lineasDB || [], visitaActiva: activa }
   }
 
   const hoy = new Date().toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' })
+
+  if (cargando) return <p className="text-sm p-4" style={{ color: 'var(--muted)' }}>Cargando ruta…</p>
 
   return (
     <div>
       <div className="mb-5">
         <h2 className="text-2xl font-medium tracking-tight" style={{ fontFamily: "'Fraunces', serif", color: 'var(--ink)' }}>Mi ruta</h2>
         <p className="text-sm capitalize" style={{ color: 'var(--muted)' }}>{hoy}</p>
+        {origen === 'local' && (
+          <p className="text-[10px] font-mono uppercase tracking-wider mt-1" style={{ color: 'var(--amber, #C99031)' }}>
+            ⚠ Datos locales — se actualizará con señal
+          </p>
+        )}
       </div>
 
       {visitaActiva && (
@@ -61,7 +130,6 @@ export default async function RutaPage() {
       )}
 
       <div className="relative">
-        {/* Línea vertical de ruta */}
         {lineas && lineas.length > 1 && (
           <div className="absolute left-[19px] top-[40px] bottom-[40px] w-[2px]"
             style={{ background: 'var(--line)' }} />
@@ -75,7 +143,6 @@ export default async function RutaPage() {
 
             return (
               <div key={linea.id} className="relative flex gap-3 py-3">
-                {/* Nodo de ruta */}
                 <div className="relative z-10 shrink-0 flex flex-col items-center">
                   <div className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold"
                     style={{
@@ -87,7 +154,6 @@ export default async function RutaPage() {
                   </div>
                 </div>
 
-                {/* Tarjeta */}
                 {esActiva ? (
                   <Link href={`/ruta/${linea.id}`} className="flex-1 block rounded-md p-4 transition-transform active:scale-[.98]"
                     style={{ background: 'var(--surface)', border: '2px solid var(--brand)' }}>
@@ -100,7 +166,7 @@ export default async function RutaPage() {
                         <div className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>
                           {linea.clientes.direccion}{linea.clientes.localidad ? ` · ${linea.clientes.localidad}` : ''}
                         </div>
-                        <div className="text-xs mt-1 font-mono" style={{ color: 'var(--muted)' }}>{linea.vales.numero}</div>
+                        <div className="text-xs mt-1 font-mono" style={{ color: 'var(--muted)' }}>{(linea.vales as any).numero}</div>
                       </div>
                       <div className="text-right shrink-0">
                         <div className="text-2xl font-medium" style={{ fontFamily: "'Fraunces', serif", color: 'var(--brand)' }}>{pendiente}</div>
@@ -137,7 +203,7 @@ export default async function RutaPage() {
                         <div className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>
                           {linea.clientes.direccion}{linea.clientes.localidad ? ` · ${linea.clientes.localidad}` : ''}
                         </div>
-                        <div className="text-xs mt-1 font-mono" style={{ color: 'var(--muted)' }}>{linea.vales.numero}</div>
+                        <div className="text-xs mt-1 font-mono" style={{ color: 'var(--muted)' }}>{(linea.vales as any).numero}</div>
                       </div>
                       <div className="text-right shrink-0">
                         <div className="text-2xl font-medium" style={{ fontFamily: "'Fraunces', serif", color: 'var(--brand)' }}>{pendiente}</div>
