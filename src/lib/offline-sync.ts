@@ -167,10 +167,19 @@ async function procesarAccion(supabase: any, accion: AccionPendiente): Promise<b
       }).eq('id', accion.lineaId)
       if (err2) return false
 
-      if (d.vale_id && d.nuevo_estado_vale) {
-        await supabase.from('vales').update({
-          estado: d.nuevo_estado_vale,
-        }).eq('id', d.vale_id)
+      // Recalcular estado del vale desde la DB (no confiar en el valor offline)
+      if (d.vale_id) {
+        const { data: todasLineas } = await supabase
+          .from('vale_lineas')
+          .select('estado')
+          .eq('vale_id', d.vale_id)
+        if (todasLineas) {
+          const todas = todasLineas.every((l: any) => l.estado === 'completa')
+          const alguna = todasLineas.some((l: any) => l.estado !== 'pendiente')
+          await supabase.from('vales').update({
+            estado: todas ? 'completo' : alguna ? 'en_curso' : 'asignado',
+          }).eq('id', d.vale_id)
+        }
       }
 
       await borrarRemitoLocal(accion.lineaId)
