@@ -43,7 +43,7 @@ export default function LoginPage() {
       if (profile?.role === 'chofer') {
         router.push('/ruta')
       } else {
-        router.push('/vales')
+        router.push('/dashboard')
       }
     }
   }
