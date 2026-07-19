@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase-browser'
 import { useState } from 'react'
 
 const NAV_ITEMS = [
+  { href: '/dashboard', label: 'Dashboard', icon: '📊' },
   { href: '/vales', label: 'Vales', icon: '📋' },
   { href: '/clientes', label: 'Clientes', icon: '🏭' },
   { href: '/transportistas', label: 'Transportistas', icon: '🚛' },
