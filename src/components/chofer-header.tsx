@@ -1,4 +1,5 @@
 'use client'
+import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase-browser'
 import { useRouter } from 'next/navigation'
 import SyncIndicator from './sync-indicator'
@@ -6,6 +7,24 @@ import SyncIndicator from './sync-indicator'
 export default function ChoferHeader({ nombre }: { nombre: string }) {
   const router = useRouter()
   const supabase = createClient()
+
+  const [displayName, setDisplayName] = useState(nombre || 'Chofer')
+
+  useEffect(() => {
+    if (nombre && nombre !== 'Chofer' && nombre !== '') {
+      // Recibimos nombre del server → guardar en cache
+      try {
+        localStorage.setItem('vapal_chofer_nombre', nombre)
+      } catch { /* localStorage no disponible */ }
+      setDisplayName(nombre)
+    } else {
+      // No hay nombre del server → leer del cache
+      try {
+        const cached = localStorage.getItem('vapal_chofer_nombre')
+        if (cached) setDisplayName(cached)
+      } catch { /* localStorage no disponible */ }
+    }
+  }, [nombre])
 
   async function handleLogout() {
     await supabase.auth.signOut()
@@ -21,7 +40,7 @@ export default function ChoferHeader({ nombre }: { nombre: string }) {
 
         {/* Nombre chofer — centro, crece para ocupar espacio */}
         <div className="flex-1 text-center">
-          <div className="text-sm font-semibold text-white tracking-tight">{nombre}</div>
+          <div className="text-sm font-semibold text-white tracking-tight">{displayName}</div>
         </div>
 
         {/* Online + Salir — derecha */}

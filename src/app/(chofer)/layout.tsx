@@ -7,18 +7,29 @@ export default async function ChoferLayout({ children }: { children: React.React
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  const { data: perfil } = await supabase
-    .from('users')
-    .select('role, nombre')
-    .eq('id', user.id)
-    .single()
+  let nombreChofer = ''
+  let role = ''
+  try {
+    const { data: perfil } = await supabase
+      .from('users')
+      .select('role, nombre')
+      .eq('id', user.id)
+      .single()
+
+    role = perfil?.role || ''
+    nombreChofer = perfil?.nombre || ''
+  } catch {
+    // Offline o error de red — el header usará el nombre cacheado
+    role = ''
+    nombreChofer = ''
+  }
 
   // Solo choferes entran acá. Cualquier otro rol vuelve al dashboard.
-  if (perfil?.role !== 'chofer') redirect('/vales')
+  if (role && role !== 'chofer') redirect('/vales')
 
   return (
     <div className="min-h-screen" style={{ background: 'var(--bg)' }}>
-      <ChoferHeader nombre={perfil.nombre} />
+      <ChoferHeader nombre={nombreChofer} />
       <main className="p-4 max-w-md mx-auto">{children}</main>
     </div>
   )

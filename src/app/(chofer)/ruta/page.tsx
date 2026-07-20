@@ -109,6 +109,8 @@ function VistaVisita({ linea, lineaId, supabase, online, onVolver }: { linea: an
   const [alertaSinFoto, setAlertaSinFoto] = useState(false)
   const [firmaNombre, setFirmaNombre] = useState('')
   const [subiendoFirma, setSubiendoFirma] = useState(false)
+  const [visitaCerrada, setVisitaCerrada] = useState(false)
+  const [datosCierre, setDatosCierre] = useState<any>(null)
   const total = buenos + recuperar + scrap
   useEffect(() => { cargarRemito() }, [lineaId])
   async function cargarRemito() {
@@ -249,15 +251,38 @@ function VistaVisita({ linea, lineaId, supabase, online, onVolver }: { linea: an
           await supabase.from('vales').update({ estado: todas ? 'completo' : alguna ? 'en_curso' : 'asignado' }).eq('id', linea.vales.id)
         }
       }
+      // --- Email al cliente ---
       if (linea.clientes?.contacto_email) {
         try {
           const { data: userData } = await supabase.auth.getUser()
           const { data: userProfile } = await supabase.from('users').select('nombre, transportista_id').eq('id', userData.user!.id).single()
           let transportistaNombre = ''
           if (userProfile?.transportista_id) { const { data: transp } = await supabase.from('transportistas').select('nombre').eq('id', userProfile.transportista_id).single(); transportistaNombre = transp?.nombre || '' }
-          fetch('/api/email-comprobante', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ clienteNombre: linea.clientes.nombre, clienteEmail: linea.clientes.contacto_email, choferNombre: userProfile?.nombre || '', transportistaNombre, valeNumero: linea.vales?.numero || '', cantidadBuenos: remitoActivo.cantidad_buenos, cantidadRecuperar: remitoActivo.cantidad_recuperar, cantidadScrap: remitoActivo.cantidad_scrap, cantidadTotal: remitoActivo.cantidad_total, cantidadAutorizada: linea.cantidad_autorizada, cantidadRetiradaAcumulada: nuevaRetirada, fichadaEntrada: remitoActivo.fichada_entrada_at, fichadaSalida: ahora.toISOString(), estadiaMinutos: estadiaMin, estado: remitoActivo.estado, firmaNombre: remitoActivo.firma_nombre }) }).catch((emailErr) => console.warn('Email no enviado:', emailErr))
+          const { data: { session } } = await supabase.auth.getSession()
+          fetch('/api/email-comprobante', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(session?.access_token
+                ? { 'Authorization': 'Bearer ' + session.access_token }
+                : {})
+            },
+            body: JSON.stringify({ clienteNombre: linea.clientes.nombre, clienteEmail: linea.clientes.contacto_email, choferNombre: userProfile?.nombre || '', transportistaNombre, valeNumero: linea.vales?.numero || '', cantidadBuenos: remitoActivo.cantidad_buenos, cantidadRecuperar: remitoActivo.cantidad_recuperar, cantidadScrap: remitoActivo.cantidad_scrap, cantidadTotal: remitoActivo.cantidad_total, cantidadAutorizada: linea.cantidad_autorizada, cantidadRetiradaAcumulada: nuevaRetirada, fichadaEntrada: remitoActivo.fichada_entrada_at, fichadaSalida: ahora.toISOString(), estadiaMinutos: estadiaMin, estado: remitoActivo.estado, firmaNombre: remitoActivo.firma_nombre })
+          }).catch((emailErr) => console.warn('Email no enviado:', emailErr))
         } catch (emailErr) { console.warn('Email no enviado:', emailErr) }
       }
+      // --- Guardar datos para pantalla de cierre ---
+      setDatosCierre({
+        clienteNombre: linea.clientes.nombre,
+        cantidadTotal: remitoActivo.cantidad_total,
+        cantidadBuenos: remitoActivo.cantidad_buenos,
+        cantidadRecuperar: remitoActivo.cantidad_recuperar,
+        cantidadScrap: remitoActivo.cantidad_scrap,
+        estadiaMinutos: estadiaMin,
+        estado: remitoActivo.estado,
+        firmaNombre: remitoActivo.firma_nombre,
+      })
+      setVisitaCerrada(true)
     } else {
       let nuevoEstadoVale = null
       if (linea.vales?.id) {
@@ -268,10 +293,68 @@ function VistaVisita({ linea, lineaId, supabase, online, onVolver }: { linea: an
       }
       await encolarAccion({ tipo: 'cerrar_visita', lineaId, datos: { fichada_salida_at: ahora.toISOString(), estadia_minutos: estadiaMin, nueva_cantidad_retirada: nuevaRetirada, nuevo_estado_linea: nuevoEstadoLinea, vale_id: linea.vales?.id, nuevo_estado_vale: nuevoEstadoVale }, creadoAt: ahora.toISOString() })
       await borrarRemitoLocal(lineaId)
+      setDatosCierre({
+        clienteNombre: linea.clientes.nombre,
+        cantidadTotal: remitoActivo.cantidad_total,
+        cantidadBuenos: remitoActivo.cantidad_buenos,
+        cantidadRecuperar: remitoActivo.cantidad_recuperar,
+        cantidadScrap: remitoActivo.cantidad_scrap,
+        estadiaMinutos: estadiaMin,
+        estado: remitoActivo.estado,
+        firmaNombre: remitoActivo.firma_nombre,
+      })
+      setVisitaCerrada(true)
     }
-    onVolver()
   }
   if (cargando) return <p className="text-sm p-4" style={{ color: 'var(--muted)' }}>Cargando...</p>
+
+  // --- Pantalla post-cierre con botón WhatsApp ---
+  if (visitaCerrada && datosCierre) {
+    const whatsappTexto = [
+      '\u{1F4CB} *Comprobante VaPal*',
+      '',
+      '\u{1F3E2} Cliente: ' + datosCierre.clienteNombre,
+      '\u{1F4E6} Retirados: ' + datosCierre.cantidadTotal + ' pallets',
+      '  \u2705 Buenos: ' + datosCierre.cantidadBuenos,
+      '  \u{1F527} Recuperar: ' + datosCierre.cantidadRecuperar,
+      '  \u274C Scrap: ' + datosCierre.cantidadScrap,
+      '',
+      '\u{1F4C5} ' + new Date().toLocaleDateString('es-AR', { day: '2-digit', month: 'long', year: 'numeric' }),
+      '\u23F1 Estadía: ' + datosCierre.estadiaMinutos + ' min',
+      '',
+      datosCierre.estado === 'no_conformado' ? '\u26A0\uFE0F Retiro NO conformado' : '\u2705 Firmado por: ' + datosCierre.firmaNombre,
+      '',
+      'Enviado desde VaPal'
+    ].join('\n')
+    const whatsappUrl = 'https://wa.me/?text=' + encodeURIComponent(whatsappTexto)
+    return (
+      <div>
+        <div className="rounded-md p-4 mb-4" style={{ background: 'var(--surface)', border: '1px solid var(--line)' }}>
+          <div className="flex items-center gap-2 mb-2">
+            <span className="w-3 h-3 rounded-full" style={{ background: '#5D7040' }} />
+            <span className="text-sm font-bold" style={{ color: 'var(--ink)' }}>Visita cerrada</span>
+          </div>
+          <p className="text-sm mb-1" style={{ color: 'var(--ink)' }}>{datosCierre.clienteNombre} — {datosCierre.cantidadTotal} pallets retirados</p>
+          <p className="text-xs" style={{ color: 'var(--muted)' }}>Estadía: {datosCierre.estadiaMinutos} min</p>
+        </div>
+        <div className="flex flex-col gap-3">
+          <a
+            href={whatsappUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center justify-center gap-2 w-full py-3 rounded text-white font-mono text-sm font-semibold uppercase tracking-wide"
+            style={{ background: '#25D366' }}
+          >
+            Compartir por WhatsApp
+          </a>
+          <button onClick={onVolver} className="w-full py-3 rounded-md text-sm font-semibold uppercase tracking-wider" style={{ background: 'var(--ink)', color: '#fff' }}>
+            Volver a mi ruta
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   const pendiente = linea.cantidad_autorizada - (linea.cantidad_retirada ?? 0)
   const retiroGuardado = remitoActivo?.cantidad_total > 0
   const firmaHecha = remitoActivo?.estado === 'firmado'
@@ -285,7 +368,7 @@ function VistaVisita({ linea, lineaId, supabase, online, onVolver }: { linea: an
       <div className="rounded-md p-4 mb-4" style={{ background: 'var(--surface)', border: '1px solid var(--line)' }}>
         <div className="text-xs font-mono mb-1" style={{ color: 'var(--muted)' }}>{linea.vales?.numero}</div>
         <h2 className="text-xl font-medium tracking-tight" style={{ fontFamily: "'Fraunces', serif", color: 'var(--ink)' }}>{linea.clientes.nombre}</h2>
-        <p className="text-sm mt-1" style={{ color: 'var(--muted)' }}>{linea.clientes.direccion}{linea.clientes.localidad ? ' - ' + linea.clientes.localidad : ''}</p>
+        <p className="text-sm mt-1" style={{ color: 'var(--muted)' }}>{linea.clientes.direccion}{linea.clientes.localidad ? ' — ' + linea.clientes.localidad : ''}</p>
         <div className="flex items-baseline gap-2 mt-3">
           <span className="text-3xl font-medium" style={{ fontFamily: "'Fraunces', serif", color: 'var(--brand)' }}>{pendiente}</span>
           <span className="text-xs uppercase tracking-wider" style={{ color: 'var(--muted)' }}>pallets a retirar</span>
@@ -360,11 +443,11 @@ export default function RutaPage() {
               <div key={linea.id} className="relative flex gap-3 py-3">
                 <div className="relative z-10 shrink-0 flex flex-col items-center"><div className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold" style={{ background: esActiva ? 'var(--brand)' : bloqueada ? 'var(--surface-2, #97A3AA)' : 'var(--ink)', color: '#fff', opacity: bloqueada ? 0.5 : 1 }}>{linea.orden_ruta ?? i + 1}</div></div>
                 {esActiva ? (
-                  <button onClick={() => abrirVisita(linea)} className="flex-1 text-left rounded-md p-4 transition-transform active:scale-[.98]" style={{ background: 'var(--surface)', border: '2px solid var(--brand)' }}><div className="flex items-start justify-between gap-3"><div><div className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: 'var(--brand)' }}>En curso</div><div className="font-semibold" style={{ color: 'var(--ink)' }}>{linea.clientes.nombre}</div><div className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>{linea.clientes.direccion}{linea.clientes.localidad ? ' - ' + linea.clientes.localidad : ''}</div><div className="text-xs mt-1 font-mono" style={{ color: 'var(--muted)' }}>{(linea.vales as any).numero}</div></div><div className="text-right shrink-0"><div className="text-2xl font-medium" style={{ fontFamily: "'Fraunces', serif", color: 'var(--brand)' }}>{pendiente}</div><div className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--muted)' }}>a retirar</div></div></div><div className="mt-3 py-2.5 rounded text-center text-xs font-bold uppercase tracking-wider text-white" style={{ background: 'var(--brand)' }}>Continuar visita</div></button>
+                  <button onClick={() => abrirVisita(linea)} className="flex-1 text-left rounded-md p-4 transition-transform active:scale-[.98]" style={{ background: 'var(--surface)', border: '2px solid var(--brand)' }}><div className="flex items-start justify-between gap-3"><div><div className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: 'var(--brand)' }}>En curso</div><div className="font-semibold" style={{ color: 'var(--ink)' }}>{linea.clientes.nombre}</div><div className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>{linea.clientes.direccion}{linea.clientes.localidad ? ' — ' + linea.clientes.localidad : ''}</div><div className="text-xs mt-1 font-mono" style={{ color: 'var(--muted)' }}>{(linea.vales as any).numero}</div></div><div className="text-right shrink-0"><div className="text-2xl font-medium" style={{ fontFamily: "'Fraunces', serif", color: 'var(--brand)' }}>{pendiente}</div><div className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--muted)' }}>a retirar</div></div></div><div className="mt-3 py-2.5 rounded text-center text-xs font-bold uppercase tracking-wider text-white" style={{ background: 'var(--brand)' }}>Continuar visita</div></button>
                 ) : bloqueada ? (
-                  <div className="flex-1 rounded-md p-4" style={{ background: 'var(--surface)', border: '1px solid var(--line)', opacity: 0.45 }}><div className="flex items-start justify-between gap-3"><div><div className="font-semibold" style={{ color: 'var(--ink)' }}>{linea.clientes.nombre}</div><div className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>{linea.clientes.direccion}{linea.clientes.localidad ? ' - ' + linea.clientes.localidad : ''}</div></div><div className="text-right shrink-0"><div className="text-2xl font-medium" style={{ fontFamily: "'Fraunces', serif", color: 'var(--muted)' }}>{pendiente}</div><div className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--muted)' }}>a retirar</div></div></div></div>
+                  <div className="flex-1 rounded-md p-4" style={{ background: 'var(--surface)', border: '1px solid var(--line)', opacity: 0.45 }}><div className="flex items-start justify-between gap-3"><div><div className="font-semibold" style={{ color: 'var(--ink)' }}>{linea.clientes.nombre}</div><div className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>{linea.clientes.direccion}{linea.clientes.localidad ? ' — ' + linea.clientes.localidad : ''}</div></div><div className="text-right shrink-0"><div className="text-2xl font-medium" style={{ fontFamily: "'Fraunces', serif", color: 'var(--muted)' }}>{pendiente}</div><div className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--muted)' }}>a retirar</div></div></div></div>
                 ) : (
-                  <button onClick={() => abrirVisita(linea)} className="flex-1 text-left rounded-md p-4 transition-transform active:scale-[.98]" style={{ background: 'var(--surface)', border: '1px solid var(--line)' }}><div className="flex items-start justify-between gap-3"><div><div className="font-semibold" style={{ color: 'var(--ink)' }}>{linea.clientes.nombre}</div><div className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>{linea.clientes.direccion}{linea.clientes.localidad ? ' - ' + linea.clientes.localidad : ''}</div><div className="text-xs mt-1 font-mono" style={{ color: 'var(--muted)' }}>{(linea.vales as any).numero}</div></div><div className="text-right shrink-0"><div className="text-2xl font-medium" style={{ fontFamily: "'Fraunces', serif", color: 'var(--brand)' }}>{pendiente}</div><div className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--muted)' }}>a retirar</div></div></div>{linea.estado === 'parcial' && (<div className="mt-2 text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--amber, #C99031)' }}>Retiro parcial - quedan {pendiente}</div>)}</button>
+                  <button onClick={() => abrirVisita(linea)} className="flex-1 text-left rounded-md p-4 transition-transform active:scale-[.98]" style={{ background: 'var(--surface)', border: '1px solid var(--line)' }}><div className="flex items-start justify-between gap-3"><div><div className="font-semibold" style={{ color: 'var(--ink)' }}>{linea.clientes.nombre}</div><div className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>{linea.clientes.direccion}{linea.clientes.localidad ? ' — ' + linea.clientes.localidad : ''}</div><div className="text-xs mt-1 font-mono" style={{ color: 'var(--muted)' }}>{(linea.vales as any).numero}</div></div><div className="text-right shrink-0"><div className="text-2xl font-medium" style={{ fontFamily: "'Fraunces', serif", color: 'var(--brand)' }}>{pendiente}</div><div className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--muted)' }}>a retirar</div></div></div>{linea.estado === 'parcial' && (<div className="mt-2 text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--amber, #C99031)' }}>Retiro parcial — quedan {pendiente}</div>)}</button>
                 )}
               </div>
             )
