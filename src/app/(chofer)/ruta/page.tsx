@@ -273,6 +273,7 @@ function VistaVisita({ linea, lineaId, supabase, online, onVolver }: { linea: an
       }
       // --- Guardar datos para pantalla de cierre ---
       setDatosCierre({
+        remitoId: remitoActivo.id,
         clienteNombre: linea.clientes.nombre,
         cantidadTotal: remitoActivo.cantidad_total,
         cantidadBuenos: remitoActivo.cantidad_buenos,
@@ -294,6 +295,7 @@ function VistaVisita({ linea, lineaId, supabase, online, onVolver }: { linea: an
       await encolarAccion({ tipo: 'cerrar_visita', lineaId, datos: { fichada_salida_at: ahora.toISOString(), estadia_minutos: estadiaMin, nueva_cantidad_retirada: nuevaRetirada, nuevo_estado_linea: nuevoEstadoLinea, vale_id: linea.vales?.id, nuevo_estado_vale: nuevoEstadoVale }, creadoAt: ahora.toISOString() })
       await borrarRemitoLocal(lineaId)
       setDatosCierre({
+        remitoId: remitoActivo.id,
         clienteNombre: linea.clientes.nombre,
         cantidadTotal: remitoActivo.cantidad_total,
         cantidadBuenos: remitoActivo.cantidad_buenos,
@@ -310,21 +312,16 @@ function VistaVisita({ linea, lineaId, supabase, online, onVolver }: { linea: an
 
   // --- Pantalla post-cierre con botón WhatsApp ---
   if (visitaCerrada && datosCierre) {
+    const comprobanteUrl = window.location.origin + '/comprobante/' + datosCierre.remitoId
     const whatsappTexto = [
-      '\u{1F4CB} *Comprobante VaPal*',
+      '\u{1F4CB} *Comprobante de retiro — VaPal*',
       '',
-      '\u{1F3E2} Cliente: ' + datosCierre.clienteNombre,
-      '\u{1F4E6} Retirados: ' + datosCierre.cantidadTotal + ' pallets',
-      '  \u2705 Buenos: ' + datosCierre.cantidadBuenos,
-      '  \u{1F527} Recuperar: ' + datosCierre.cantidadRecuperar,
-      '  \u274C Scrap: ' + datosCierre.cantidadScrap,
+      'Cliente: ' + datosCierre.clienteNombre,
+      'Retirados: ' + datosCierre.cantidadTotal + ' pallets',
+      'Fecha: ' + new Date().toLocaleDateString('es-AR', { day: '2-digit', month: 'long', year: 'numeric' }),
       '',
-      '\u{1F4C5} ' + new Date().toLocaleDateString('es-AR', { day: '2-digit', month: 'long', year: 'numeric' }),
-      '\u23F1 Estadía: ' + datosCierre.estadiaMinutos + ' min',
-      '',
-      datosCierre.estado === 'no_conformado' ? '\u26A0\uFE0F Retiro NO conformado' : '\u2705 Firmado por: ' + datosCierre.firmaNombre,
-      '',
-      'Enviado desde VaPal'
+      '\u{1F517} Ver comprobante completo:',
+      comprobanteUrl,
     ].join('\n')
     const whatsappUrl = 'https://wa.me/?text=' + encodeURIComponent(whatsappTexto)
     return (
