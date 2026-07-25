@@ -3,17 +3,22 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase-browser'
 
-// Colores de la paleta VaPal
 const C = {
-  ink: '#1E2A38',
-  muted: '#4E5C68',
-  steel: '#2E4A63',
-  brand: '#C55A2F',
-  olive: '#5D7040',
-  amber: '#C99031',
-  bg: '#B4BEC4',
-  surface: '#CDD5DA',
-  line: '#8C99A1',
+  ink: '#1b3a4b',
+  muted: '#6a8494',
+  green: '#2a9d6e',
+  greenDark: '#1a7a52',
+  blue: '#2c6382',
+  blueLight: '#3b8ea8',
+  amber: '#c49a3c',
+  red: '#b04040',
+  bg: '#e4ecf0',
+  card: '#f4f7f9',
+  cardBorder: '#dce6ec',
+  barTrack: '#dce6ec',
+  barGreen: '#2a9d6e',
+  barBlue: '#3b8ea8',
+  barSoft: '#a0c4b4',
 }
 
 interface Resumen {
@@ -108,13 +113,13 @@ export default function DashboardPage() {
   const mesActual = new Date().toLocaleString('es-AR', { month: 'long', year: 'numeric' })
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {/* Header */}
       <div>
-        <p className="text-xs uppercase tracking-wider font-mono" style={{ color: C.muted }}>
+        <p className="text-xs uppercase tracking-wider font-semibold" style={{ color: C.green, letterSpacing: '.14em' }}>
           Dashboard
         </p>
-        <h1 className="text-2xl font-semibold" style={{ color: C.ink }}>
+        <h1 className="text-2xl font-bold" style={{ color: C.ink }}>
           {mesActual}
         </h1>
       </div>
@@ -124,48 +129,47 @@ export default function DashboardPage() {
         <KpiCard
           valor={resumen?.retiros_mes ?? 0}
           label="Retiros del mes"
-          color={C.steel}
+          color={C.blue}
           detalle={`${resumen?.pallets_mes ?? 0} pallets`}
         />
         <KpiCard
           valor={`${resumen?.cumplimiento_pct ?? 0}%`}
           label="Cumplimiento"
-          color={C.olive}
+          color={C.greenDark}
         />
         <KpiCard
           valor={`${resumen?.estadia_promedio_min ?? 0}m`}
           label="Estadía promedio"
-          color={C.ink}
+          color={C.blue}
         />
         <KpiCard
           valor={resumen?.pendientes ?? 0}
           label="Pendientes"
-          color={C.brand}
+          color={C.red}
         />
       </div>
 
       {/* Fila 2: Transportistas + Saldo pendiente */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Retiros por transportista */}
         <Panel titulo="Retiros por transportista" subtitulo="Pallets del mes">
           {transportistas.length === 0 ? (
             <p className="text-sm" style={{ color: C.muted }}>Sin datos aún</p>
           ) : (
             <div className="space-y-3">
-              {transportistas.map((t) => (
+              {transportistas.map((t, i) => (
                 <div key={t.transportista}>
                   <div className="flex justify-between text-sm mb-1">
                     <span style={{ color: C.ink }}>{t.transportista}</span>
-                    <span className="font-mono text-xs" style={{ color: C.muted }}>
+                    <span className="text-xs font-bold" style={{ color: C.ink }}>
                       {t.pallets_mes}
                     </span>
                   </div>
-                  <div className="h-5 rounded-sm overflow-hidden" style={{ background: C.bg }}>
+                  <div className="h-4 rounded overflow-hidden" style={{ background: C.barTrack }}>
                     <div
-                      className="h-full rounded-sm transition-all"
+                      className="h-full rounded transition-all"
                       style={{
                         width: `${(t.pallets_mes / maxPalletsTrans) * 100}%`,
-                        background: C.steel,
+                        background: i === 0 ? C.barGreen : i === 1 ? C.barBlue : C.barSoft,
                       }}
                     />
                   </div>
@@ -175,25 +179,24 @@ export default function DashboardPage() {
           )}
         </Panel>
 
-        {/* Saldo pendiente por cliente */}
         <Panel titulo="Saldo pendiente" subtitulo="Pallets por cliente">
           {saldos.length === 0 ? (
             <p className="text-sm" style={{ color: C.muted }}>Sin deuda registrada</p>
           ) : (
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b" style={{ borderColor: C.line }}>
-                  <th className="text-left py-2 font-mono text-xs uppercase tracking-wider"
-                      style={{ color: C.muted }}>Cliente</th>
-                  <th className="text-right py-2 font-mono text-xs uppercase tracking-wider"
-                      style={{ color: C.muted }}>Deuda</th>
+                <tr style={{ borderBottom: `1px solid ${C.cardBorder}` }}>
+                  <th className="text-left py-2 text-xs uppercase font-semibold"
+                      style={{ color: C.muted, letterSpacing: '.08em' }}>Cliente</th>
+                  <th className="text-right py-2 text-xs uppercase font-semibold"
+                      style={{ color: C.muted, letterSpacing: '.08em' }}>Deuda</th>
                 </tr>
               </thead>
               <tbody>
                 {saldos.map((s) => (
-                  <tr key={s.cliente_nombre} className="border-b" style={{ borderColor: `${C.line}40` }}>
+                  <tr key={s.cliente_nombre} style={{ borderBottom: `1px solid ${C.cardBorder}` }}>
                     <td className="py-2" style={{ color: C.ink }}>{s.cliente_nombre}</td>
-                    <td className="py-2 text-right font-mono font-semibold" style={{ color: C.brand }}>
+                    <td className="py-2 text-right font-extrabold" style={{ color: C.greenDark }}>
                       {s.saldo_deuda}
                     </td>
                   </tr>
@@ -206,7 +209,6 @@ export default function DashboardPage() {
 
       {/* Fila 3: Estadías + Clasificación */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Estadía por cliente */}
         <Panel titulo="Estadía por cliente" subtitulo="Promedio en minutos">
           {estadias.length === 0 ? (
             <p className="text-sm" style={{ color: C.muted }}>Sin datos de estadía</p>
@@ -216,16 +218,16 @@ export default function DashboardPage() {
                 <div key={e.cliente}>
                   <div className="flex justify-between text-sm mb-1">
                     <span style={{ color: C.ink }}>{e.cliente}</span>
-                    <span className="font-mono text-xs" style={{ color: C.muted }}>
+                    <span className="text-xs font-bold" style={{ color: C.muted }}>
                       {e.estadia_promedio}m · {e.visitas} visitas
                     </span>
                   </div>
-                  <div className="h-5 rounded-sm overflow-hidden" style={{ background: C.bg }}>
+                  <div className="h-4 rounded overflow-hidden" style={{ background: C.barTrack }}>
                     <div
-                      className="h-full rounded-sm"
+                      className="h-full rounded"
                       style={{
                         width: `${(e.estadia_promedio / maxEstadia) * 100}%`,
-                        background: e.estadia_promedio > 45 ? C.brand : C.amber,
+                        background: e.estadia_promedio > 45 ? C.blue : C.blueLight,
                       }}
                     />
                   </div>
@@ -235,32 +237,29 @@ export default function DashboardPage() {
           )}
         </Panel>
 
-        {/* Clasificación de pallets */}
         <Panel titulo="Clasificación acumulada" subtitulo="Distribución por estado">
           {!clasificacion || clasificacion.total_general === 0 ? (
             <p className="text-sm" style={{ color: C.muted }}>Sin datos de clasificación</p>
           ) : (
             <div className="space-y-4">
-              {/* Barra apilada */}
-              <div className="h-8 rounded-sm overflow-hidden flex">
+              <div className="h-6 rounded overflow-hidden flex">
                 <div
-                  style={{ width: `${clasificacion.pct_buenos}%`, background: C.olive }}
+                  style={{ width: `${clasificacion.pct_buenos}%`, background: C.green }}
                   title={`Buenos: ${clasificacion.pct_buenos}%`}
                 />
                 <div
-                  style={{ width: `${clasificacion.pct_recuperar}%`, background: C.amber }}
+                  style={{ width: `${clasificacion.pct_recuperar}%`, background: C.blueLight }}
                   title={`A recuperar: ${clasificacion.pct_recuperar}%`}
                 />
                 <div
-                  style={{ width: `${clasificacion.pct_scrap}%`, background: C.brand }}
+                  style={{ width: `${clasificacion.pct_scrap}%`, background: C.amber }}
                   title={`Scrap: ${clasificacion.pct_scrap}%`}
                 />
               </div>
 
-              {/* Leyenda */}
               <div className="grid grid-cols-3 gap-2 text-center">
                 <div>
-                  <div className="font-mono text-lg font-semibold" style={{ color: C.olive }}>
+                  <div className="text-lg font-extrabold" style={{ color: C.greenDark }}>
                     {clasificacion.total_buenos}
                   </div>
                   <div className="text-xs" style={{ color: C.muted }}>
@@ -268,7 +267,7 @@ export default function DashboardPage() {
                   </div>
                 </div>
                 <div>
-                  <div className="font-mono text-lg font-semibold" style={{ color: C.amber }}>
+                  <div className="text-lg font-extrabold" style={{ color: C.blue }}>
                     {clasificacion.total_recuperar}
                   </div>
                   <div className="text-xs" style={{ color: C.muted }}>
@@ -276,7 +275,7 @@ export default function DashboardPage() {
                   </div>
                 </div>
                 <div>
-                  <div className="font-mono text-lg font-semibold" style={{ color: C.brand }}>
+                  <div className="text-lg font-extrabold" style={{ color: C.amber }}>
                     {clasificacion.total_scrap}
                   </div>
                   <div className="text-xs" style={{ color: C.muted }}>
@@ -293,23 +292,23 @@ export default function DashboardPage() {
       {semanas.length > 1 && (
         <Panel titulo="Tendencia semanal" subtitulo="Pallets retirados por semana">
           <div className="flex items-end gap-2" style={{ height: '120px' }}>
-            {semanas.map((s) => (
+            {semanas.map((s, i) => (
               <div
                 key={s.semana}
                 className="flex-1 flex flex-col items-center justify-end"
               >
-                <span className="font-mono text-xs mb-1" style={{ color: C.muted }}>
+                <span className="text-xs font-bold mb-1" style={{ color: C.ink }}>
                   {s.pallets}
                 </span>
                 <div
-                  className="w-full rounded-t-sm"
+                  className="w-full rounded-t"
                   style={{
                     height: `${(s.pallets / maxPalletsSem) * 100}%`,
                     minHeight: '4px',
-                    background: C.steel,
+                    background: i % 2 === 0 ? C.barGreen : C.barBlue,
                   }}
                 />
-                <span className="font-mono mt-1" style={{ fontSize: '0.6rem', color: C.muted }}>
+                <span className="mt-1" style={{ fontSize: '0.6rem', color: C.muted }}>
                   {new Date(s.semana).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' })}
                 </span>
               </div>
@@ -335,11 +334,11 @@ function KpiCard({
   detalle?: string
 }) {
   return (
-    <div className="rounded p-4" style={{ background: C.surface, border: `1px solid ${C.line}40` }}>
-      <div className="font-serif text-3xl font-medium" style={{ color, letterSpacing: '-0.02em' }}>
+    <div className="rounded-lg p-4" style={{ background: C.card }}>
+      <div className="text-3xl font-extrabold" style={{ color, letterSpacing: '-0.02em' }}>
         {typeof valor === 'number' ? valor.toLocaleString('es-AR') : valor}
       </div>
-      <div className="font-mono text-xs uppercase tracking-wider mt-1" style={{ color: C.muted }}>
+      <div className="text-xs uppercase font-semibold mt-1" style={{ color: C.muted, letterSpacing: '.1em' }}>
         {label}
       </div>
       {detalle && (
@@ -359,11 +358,11 @@ function Panel({
   children: React.ReactNode
 }) {
   return (
-    <div className="rounded p-4" style={{ background: C.surface, border: `1px solid ${C.line}40` }}>
+    <div className="rounded-lg p-4" style={{ background: C.card }}>
       <div className="mb-4">
-        <h3 className="font-semibold text-sm" style={{ color: C.ink }}>{titulo}</h3>
+        <h3 className="font-bold text-sm" style={{ color: C.ink }}>{titulo}</h3>
         {subtitulo && (
-          <p className="font-mono text-xs uppercase tracking-wider" style={{ color: C.muted }}>
+          <p className="text-xs uppercase font-semibold" style={{ color: C.muted, letterSpacing: '.08em' }}>
             {subtitulo}
           </p>
         )}

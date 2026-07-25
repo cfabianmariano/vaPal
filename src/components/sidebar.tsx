@@ -5,14 +5,24 @@ import { createClient } from '@/lib/supabase-browser'
 import { useState } from 'react'
 
 const NAV_ITEMS = [
-  { href: '/dashboard', label: 'Dashboard', icon: '📊' },
-  { href: '/vales', label: 'Vales', icon: '📋' },
-  { href: '/clientes', label: 'Clientes', icon: '🏭' },
-  { href: '/transportistas', label: 'Transportistas', icon: '🚛' },
-  { href: '/consulta', label: 'Consulta', icon: '🔍' },
-    { href: '/productos', label: 'Productos ret.', icon: '📦' },
-    { href: '/importar', label: 'Importar ERP', icon: '📄' },
+  { href: '/dashboard', label: 'Dashboard', icon: '▣' },
+  { href: '/vales', label: 'Vales', icon: '▤' },
+  { href: '/clientes', label: 'Clientes', icon: '▥' },
+  { href: '/transportistas', label: 'Transportistas', icon: '▦' },
+  { href: '/consulta', label: 'Consulta', icon: '◎' },
+  { href: '/productos', label: 'Productos ret.', icon: '◈' },
+  { href: '/importar', label: 'Importar ERP', icon: '◇' },
 ]
+
+const S = {
+  bg: '#1b3a4b',
+  active: 'rgba(42,157,110,.15)',
+  activeBorder: '#2a9d6e',
+  activeText: '#fff',
+  text: '#7a9aad',
+  textHover: '#c0d8e4',
+  muted: '#5a7a8a',
+}
 
 export default function Sidebar() {
   const pathname = usePathname()
@@ -31,7 +41,7 @@ export default function Sidebar() {
       <button
         onClick={() => setOpen(true)}
         className="fixed top-4 left-4 z-50 md:hidden w-10 h-10 flex items-center justify-center rounded-lg"
-        style={{ background: 'var(--surface)', color: 'var(--ink)' }}
+        style={{ background: '#e4ecf0', color: '#1b3a4b' }}
       >
         <svg viewBox="0 0 24 24" className="w-6 h-6 mx-auto" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
           <line x1="3" y1="6" x2="21" y2="6" />
@@ -50,37 +60,43 @@ export default function Sidebar() {
 
       {/* Sidebar */}
       <aside
-        className={`fixed top-0 left-0 h-full z-40 flex flex-col p-4 w-56 transition-transform duration-200 md:static md:translate-x-0 ${open ? "translate-x-0" : "-translate-x-full"}`}
-        style={{ background: 'var(--surface)' }}
+        className={`fixed top-0 left-0 h-full z-40 flex flex-col py-4 w-56 transition-transform duration-200 md:static md:translate-x-0 ${open ? "translate-x-0" : "-translate-x-full"}`}
+        style={{ background: S.bg }}
       >
         {/* Botón cerrar — solo mobile */}
         <button
           onClick={() => setOpen(false)}
-          className="md:hidden self-end mb-2 w-8 h-8 flex items-center justify-center rounded"
-          style={{ color: 'var(--muted)' }}
+          className="md:hidden self-end mb-2 mr-3 w-8 h-8 flex items-center justify-center rounded"
+          style={{ color: S.text }}
         >
           ✕
         </button>
 
-        <div className="mb-6 px-1">
-          <img src="/VaPal__logo.png" alt="VaPal" style={{ width: '150px' }} />
+        <div className="mb-6 px-4">
+          <img src="/VaPal__logo.png" alt="VaPal" style={{ width: '140px' }} />
         </div>
 
-        <nav className="flex flex-col gap-1 flex-1">
+        <nav className="flex flex-col gap-0.5 flex-1 px-2">
           {NAV_ITEMS.map((item) => {
             const isActive = pathname.startsWith(item.href)
             return (
               <Link key={item.href} href={item.href}
                 onClick={() => setOpen(false)}
-                className="flex items-center gap-3 px-3 py-2.5 rounded text-sm font-medium transition-colors"
-                style={{ background: isActive ? 'var(--bg)' : 'transparent', color: isActive ? 'var(--ink)' : 'var(--muted)' }}>
-                <span>{item.icon}</span>{item.label}
+                className="flex items-center gap-3 px-3 py-2.5 text-sm font-medium transition-colors"
+                style={{
+                  background: isActive ? S.active : 'transparent',
+                  color: isActive ? S.activeText : S.text,
+                  borderLeft: isActive ? `3px solid ${S.activeBorder}` : '3px solid transparent',
+                  borderRadius: 0,
+                }}>
+                <span style={{ fontSize: '11px', opacity: isActive ? 1 : 0.6 }}>{item.icon}</span>
+                {item.label}
               </Link>
             )
           })}
         </nav>
 
-        <button onClick={handleLogout} className="mt-auto px-3 py-2 text-sm text-left rounded transition-colors" style={{ color: 'var(--muted)' }}>
+        <button onClick={handleLogout} className="mx-4 px-3 py-2 text-sm text-left transition-colors" style={{ color: S.muted }}>
           Cerrar sesión
         </button>
       </aside>
