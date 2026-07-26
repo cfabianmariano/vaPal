@@ -45,7 +45,6 @@ export default function NuevoValePage() {
       const { data: perfil } = await supabase.from('users').select('id, organization_id').eq('id', userData.user?.id).single()
       if (!perfil) throw new Error('No se encontró el perfil del usuario.')
 
-      // Número de vale: VAL-AÑO-secuencia
       const anio = new Date().getFullYear()
       const { count } = await supabase.from('vales').select('id', { count: 'exact', head: true })
       const numero = `VAL-${anio}-${String((count ?? 0) + 1).padStart(4, '0')}`
@@ -74,14 +73,13 @@ export default function NuevoValePage() {
       )
       if (e2) throw e2
 
-      const { error: e3 } = await supabase.from('vale_eventos').insert({
+      await supabase.from('vale_eventos').insert({
         vale_id: vale.id,
         estado_anterior: null,
         estado_nuevo: estado,
         user_id: perfil.id,
         notas: 'Vale creado',
       })
-      if (e3) throw e3
 
       router.push('/vales')
       router.refresh()
@@ -93,14 +91,14 @@ export default function NuevoValePage() {
 
   return (
     <div className="max-w-3xl">
-      <h2 className="text-2xl font-medium tracking-tight mb-1" style={{ fontFamily: "'Fraunces', serif" }}>Nuevo vale de retiro</h2>
+      <h2 className="text-2xl font-bold tracking-tight mb-1" style={{ color: 'var(--ink)' }}>Nuevo vale de retiro</h2>
       <p className="text-sm mb-8" style={{ color: 'var(--muted)' }}>Seleccioná clientes con deuda, indicá cantidades y asigná un transportista</p>
 
       {error && (
-        <div className="rounded-md p-4 text-sm mb-4" style={{ background: 'var(--brand-soft)', color: 'var(--ink)' }}>{error}</div>
+        <div className="rounded-md p-4 text-sm mb-4" style={{ background: 'rgba(42,157,110,.12)', color: 'var(--ink)' }}>{error}</div>
       )}
 
-      <div className="rounded-md overflow-hidden mb-6" style={{ background: 'var(--surface)' }}>
+      <div className="rounded-lg overflow-hidden mb-6" style={{ background: 'var(--surface)' }}>
         <table className="w-full text-sm">
           <thead>
             <tr style={{ borderBottom: '1px solid var(--line)' }}>
@@ -113,16 +111,14 @@ export default function NuevoValePage() {
             {clientes.map((c) => (
               <tr key={c.cliente_id} style={{ borderBottom: '1px solid var(--line)' }}>
                 <td className="px-4 py-3 font-medium">{c.cliente_nombre}</td>
-                <td className="px-4 py-3 text-right" style={{ color: 'var(--brand)' }}>{c.saldo_deuda}</td>
+                <td className="px-4 py-3 text-right font-semibold" style={{ color: 'var(--green-dark)' }}>{c.saldo_deuda}</td>
                 <td className="px-4 py-3 text-right">
-                  <input
-                    type="number" min={0} max={c.saldo_deuda}
+                  <input type="number" min={0} max={c.saldo_deuda}
                     value={cantidades[c.cliente_id] ?? ''}
                     onChange={(e) => setCantidad(c.cliente_id, Number(e.target.value), c.saldo_deuda)}
                     placeholder="0"
                     className="w-24 px-2 py-1.5 rounded text-right text-sm"
-                    style={{ background: 'var(--bg)', border: '1px solid var(--line)', color: 'var(--ink)' }}
-                  />
+                    style={{ background: 'var(--bg)', border: '1px solid var(--line)', color: 'var(--ink)' }} />
                 </td>
               </tr>
             ))}
@@ -133,14 +129,11 @@ export default function NuevoValePage() {
         </table>
       </div>
 
-      <div className="rounded-md p-5 mb-6" style={{ background: 'var(--surface)' }}>
+      <div className="rounded-lg p-5 mb-6" style={{ background: 'var(--surface)' }}>
         <label className="block text-xs uppercase tracking-wider font-semibold mb-2" style={{ color: 'var(--muted)' }}>Transportista</label>
-        <select
-          value={transportistaId}
-          onChange={(e) => setTransportistaId(e.target.value)}
+        <select value={transportistaId} onChange={(e) => setTransportistaId(e.target.value)}
           className="w-full px-3 py-2.5 rounded text-sm"
-          style={{ background: 'var(--bg)', border: '1px solid var(--line)', color: 'var(--ink)' }}
-        >
+          style={{ background: 'var(--bg)', border: '1px solid var(--line)', color: 'var(--ink)' }}>
           <option value="">Sin asignar (asignar después)</option>
           {transportistas.map((t) => (
             <option key={t.id} value={t.id}>{t.nombre}</option>
@@ -148,13 +141,9 @@ export default function NuevoValePage() {
         </select>
 
         <label className="block text-xs uppercase tracking-wider font-semibold mb-2 mt-4" style={{ color: 'var(--muted)' }}>Notas (opcional)</label>
-        <textarea
-          value={notas}
-          onChange={(e) => setNotas(e.target.value)}
-          rows={2}
+        <textarea value={notas} onChange={(e) => setNotas(e.target.value)} rows={2}
           className="w-full px-3 py-2.5 rounded text-sm"
-          style={{ background: 'var(--bg)', border: '1px solid var(--line)', color: 'var(--ink)' }}
-        />
+          style={{ background: 'var(--bg)', border: '1px solid var(--line)', color: 'var(--ink)' }} />
       </div>
 
       <div className="flex items-center justify-between">
@@ -165,7 +154,7 @@ export default function NuevoValePage() {
           <button onClick={() => router.push('/vales')} className="px-4 py-2.5 rounded text-sm font-medium" style={{ border: '1px solid var(--line)', color: 'var(--muted)' }}>
             Cancelar
           </button>
-          <button onClick={crearVale} disabled={guardando} className="px-5 py-2.5 rounded text-sm font-semibold" style={{ background: 'var(--brand)', color: '#fff', opacity: guardando ? 0.6 : 1 }}>
+          <button onClick={crearVale} disabled={guardando} className="px-5 py-2.5 rounded text-sm font-semibold" style={{ background: 'var(--green)', color: '#fff', opacity: guardando ? 0.6 : 1 }}>
             {guardando ? 'Creando…' : 'Crear vale'}
           </button>
         </div>

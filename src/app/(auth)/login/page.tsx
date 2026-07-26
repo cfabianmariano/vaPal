@@ -20,10 +20,7 @@ export default function LoginPage() {
     setError('')
     setLoading(true)
 
-    const { error: authError } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    })
+    const { error: authError } = await supabase.auth.signInWithPassword({ email, password })
 
     if (authError) {
       setError('Email o contraseña incorrectos')
@@ -31,15 +28,9 @@ export default function LoginPage() {
       return
     }
 
-    // Detectar rol y redirigir
     const { data: { user } } = await supabase.auth.getUser()
     if (user) {
-      const { data: profile } = await supabase
-        .from('users')
-        .select('role')
-        .eq('id', user.id)
-        .single()
-
+      const { data: profile } = await supabase.from('users').select('role').eq('id', user.id).single()
       if (profile?.role === 'chofer') {
         router.push('/ruta')
       } else {
@@ -69,138 +60,86 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center px-4"
-         style={{ background: '#B4BEC4' }}>
+         style={{ background: '#1b3a4b' }}>
       <div className="w-full max-w-sm">
-        {/* Logo */}
         <div className="flex justify-center mb-8">
-          <Image
-            src="/VaPal__logo.png"
-            alt="VaPal"
-            width={180}
-            height={60}
-            priority
-          />
+          <Image src="/VaPal__logo.png" alt="VaPal" width={180} height={60} priority />
         </div>
 
         <div className="rounded-lg p-6 shadow-lg"
-             style={{ background: '#CDD5DA', border: '1px solid #8C99A1' }}>
+             style={{ background: '#f4f7f9', border: '1px solid #c5d3dc' }}>
 
           {modo === 'login' ? (
             <>
-              <h2 className="text-lg font-semibold mb-4"
-                  style={{ color: '#1E2A38' }}>
+              <h2 className="text-lg font-bold mb-4" style={{ color: '#1b3a4b' }}>
                 Iniciar sesión
               </h2>
 
               <form onSubmit={handleLogin} className="flex flex-col gap-3">
-                <input
-                  type="email"
-                  placeholder="Email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
+                <input type="email" placeholder="Email" value={email}
+                  onChange={(e) => setEmail(e.target.value)} required
                   className="px-3 py-2 rounded text-sm border outline-none focus:ring-2"
-                  style={{
-                    background: '#fff',
-                    borderColor: '#8C99A1',
-                    color: '#1E2A38',
-                  }}
-                />
-                <input
-                  type="password"
-                  placeholder="Contraseña"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
+                  style={{ background: '#fff', borderColor: '#c5d3dc', color: '#1b3a4b' }} />
+                <input type="password" placeholder="Contraseña" value={password}
+                  onChange={(e) => setPassword(e.target.value)} required
                   className="px-3 py-2 rounded text-sm border outline-none focus:ring-2"
-                  style={{
-                    background: '#fff',
-                    borderColor: '#8C99A1',
-                    color: '#1E2A38',
-                  }}
-                />
+                  style={{ background: '#fff', borderColor: '#c5d3dc', color: '#1b3a4b' }} />
 
-                {error && (
-                  <p className="text-sm" style={{ color: '#c53030' }}>{error}</p>
-                )}
+                {error && <p className="text-sm" style={{ color: '#b04040' }}>{error}</p>}
 
-                <button
-                  type="submit"
-                  disabled={loading}
+                <button type="submit" disabled={loading}
                   className="py-2 rounded text-sm font-semibold text-white transition-opacity"
-                  style={{ background: '#C55A2F', opacity: loading ? 0.6 : 1 }}
-                >
+                  style={{ background: '#2a9d6e', opacity: loading ? 0.6 : 1 }}>
                   {loading ? 'Ingresando...' : 'Ingresar'}
                 </button>
               </form>
 
-              <button
-                onClick={() => { setModo('reset'); setError(''); setResetEnviado(false) }}
+              <button onClick={() => { setModo('reset'); setError(''); setResetEnviado(false) }}
                 className="mt-4 text-sm underline w-full text-center"
-                style={{ color: '#4E5C68' }}
-              >
+                style={{ color: '#6a8494' }}>
                 Olvidé mi clave
               </button>
             </>
           ) : (
             <>
-              <h2 className="text-lg font-semibold mb-2"
-                  style={{ color: '#1E2A38' }}>
+              <h2 className="text-lg font-bold mb-2" style={{ color: '#1b3a4b' }}>
                 Recuperar clave
               </h2>
 
               {resetEnviado ? (
                 <div className="flex flex-col gap-4">
-                  <p className="text-sm leading-relaxed" style={{ color: '#4E5C68' }}>
+                  <p className="text-sm leading-relaxed" style={{ color: '#6a8494' }}>
                     Si hay una cuenta con ese email, vas a recibir un link para crear una clave nueva. Revisá tu bandeja de entrada y spam.
                   </p>
-                  <button
-                    onClick={() => { setModo('login'); setResetEnviado(false); setError('') }}
+                  <button onClick={() => { setModo('login'); setResetEnviado(false); setError('') }}
                     className="py-2 rounded text-sm font-semibold text-white"
-                    style={{ background: '#2E4A63' }}
-                  >
+                    style={{ background: '#2c6382' }}>
                     Volver al login
                   </button>
                 </div>
               ) : (
                 <>
-                  <p className="text-sm mb-4" style={{ color: '#4E5C68' }}>
+                  <p className="text-sm mb-4" style={{ color: '#6a8494' }}>
                     Ingresá tu email y te enviamos un link para crear una clave nueva.
                   </p>
                   <form onSubmit={handleReset} className="flex flex-col gap-3">
-                    <input
-                      type="email"
-                      placeholder="Email"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      required
+                    <input type="email" placeholder="Email" value={email}
+                      onChange={(e) => setEmail(e.target.value)} required
                       className="px-3 py-2 rounded text-sm border outline-none focus:ring-2"
-                      style={{
-                        background: '#fff',
-                        borderColor: '#8C99A1',
-                        color: '#1E2A38',
-                      }}
-                    />
+                      style={{ background: '#fff', borderColor: '#c5d3dc', color: '#1b3a4b' }} />
 
-                    {error && (
-                      <p className="text-sm" style={{ color: '#c53030' }}>{error}</p>
-                    )}
+                    {error && <p className="text-sm" style={{ color: '#b04040' }}>{error}</p>}
 
-                    <button
-                      type="submit"
-                      disabled={loading}
+                    <button type="submit" disabled={loading}
                       className="py-2 rounded text-sm font-semibold text-white transition-opacity"
-                      style={{ background: '#C55A2F', opacity: loading ? 0.6 : 1 }}
-                    >
+                      style={{ background: '#2a9d6e', opacity: loading ? 0.6 : 1 }}>
                       {loading ? 'Enviando...' : 'Enviar link'}
                     </button>
                   </form>
 
-                  <button
-                    onClick={() => { setModo('login'); setError('') }}
+                  <button onClick={() => { setModo('login'); setError('') }}
                     className="mt-4 text-sm underline w-full text-center"
-                    style={{ color: '#4E5C68' }}
-                  >
+                    style={{ color: '#6a8494' }}>
                     Volver al login
                   </button>
                 </>
@@ -209,7 +148,7 @@ export default function LoginPage() {
           )}
         </div>
 
-        <p className="text-center text-xs mt-6" style={{ color: '#4E5C68' }}>
+        <p className="text-center text-xs mt-6" style={{ color: '#7a9aad' }}>
           VaPal · Trazabilidad de pallets
         </p>
       </div>

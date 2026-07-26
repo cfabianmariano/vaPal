@@ -3,10 +3,10 @@ import { createClient } from '@/lib/supabase-server'
 
 const ESTADO_LABELS: Record<string, { label: string; bg: string; color: string }> = {
   sin_asignar: { label: 'Sin asignar', bg: 'var(--surface-2)', color: 'var(--muted)' },
-  asignado:    { label: 'Asignado',    bg: 'var(--steel)',     color: '#fff' },
-  en_curso:    { label: 'En curso',    bg: 'var(--brand)',     color: '#fff' },
-  parcial:     { label: 'Parcial',     bg: 'var(--amber)',     color: '#fff' },
-  completo:    { label: 'Completo',    bg: 'var(--olive)',     color: '#fff' },
+  asignado:    { label: 'Asignado',    bg: 'var(--blue)',       color: '#fff' },
+  en_curso:    { label: 'En curso',    bg: 'var(--green)',      color: '#fff' },
+  parcial:     { label: 'Parcial',     bg: 'var(--amber)',      color: '#fff' },
+  completo:    { label: 'Completo',    bg: 'var(--green-dark)', color: '#fff' },
   cerrado:     { label: 'Cerrado',     bg: 'var(--surface-2)', color: 'var(--muted)' },
 }
 
@@ -23,21 +23,21 @@ export default async function ValesPage() {
     <div>
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h2 className="text-2xl font-medium tracking-tight mb-1" style={{ fontFamily: "'Fraunces', serif" }}>Vales de retiro</h2>
+          <h2 className="text-2xl font-bold tracking-tight mb-1" style={{ color: 'var(--ink)' }}>Vales de retiro</h2>
           <p className="text-sm" style={{ color: 'var(--muted)' }}>Órdenes de retiro activas y completadas</p>
         </div>
-        <Link href="/vales/nuevo" className="px-4 py-2.5 rounded text-sm font-semibold" style={{ background: 'var(--brand)', color: '#fff' }}>
+        <Link href="/vales/nuevo" className="px-4 py-2.5 rounded text-sm font-semibold" style={{ background: 'var(--green)', color: '#fff' }}>
           + Nuevo vale
         </Link>
       </div>
 
       {error && (
-        <div className="rounded-md p-4 text-sm mb-4" style={{ background: 'var(--brand-soft)', color: 'var(--ink)' }}>
+        <div className="rounded-md p-4 text-sm mb-4" style={{ background: 'rgba(42,157,110,.12)', color: 'var(--ink)' }}>
           Error al cargar vales: {error.message}
         </div>
       )}
 
-      <div className="rounded-md overflow-hidden" style={{ background: 'var(--surface)' }}>
+      <div className="rounded-lg overflow-hidden" style={{ background: 'var(--surface)' }}>
         <table className="w-full text-sm">
           <thead>
             <tr style={{ borderBottom: '1px solid var(--line)' }}>
@@ -56,7 +56,7 @@ export default async function ValesPage() {
               const retirado = (v.vale_lineas ?? []).reduce((s: number, l: any) => s + l.cantidad_retirada, 0)
               return (
                 <tr key={v.id} style={{ borderBottom: '1px solid var(--line)' }}>
-                  <td className="px-4 py-3 font-mono text-xs font-medium">{v.numero}</td>
+                  <td className="px-4 py-3 text-xs font-medium">{v.numero}</td>
                   <td className="px-4 py-3">{v.transportistas?.nombre ?? '—'}</td>
                   <td className="px-4 py-3 text-right" style={{ color: 'var(--muted)' }}>{autorizado}</td>
                   <td className="px-4 py-3 text-right" style={{ color: 'var(--muted)' }}>{retirado}</td>

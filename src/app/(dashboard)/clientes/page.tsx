@@ -12,16 +12,16 @@ export default async function ClientesPage() {
 
   return (
     <div>
-      <h2 className="text-2xl font-medium tracking-tight mb-1" style={{ fontFamily: "'Fraunces', serif" }}>Clientes</h2>
+      <h2 className="text-2xl font-bold tracking-tight mb-1" style={{ color: 'var(--ink)' }}>Clientes</h2>
       <p className="text-sm mb-8" style={{ color: 'var(--muted)' }}>Cuenta corriente de pallets por cliente</p>
 
       {error && (
-        <div className="rounded-md p-4 text-sm mb-4" style={{ background: 'var(--brand-soft)', color: 'var(--ink)' }}>
+        <div className="rounded-md p-4 text-sm mb-4" style={{ background: 'rgba(42,157,110,.12)', color: 'var(--ink)' }}>
           Error al cargar clientes: {error.message}
         </div>
       )}
 
-      <div className="rounded-md overflow-hidden" style={{ background: 'var(--surface)' }}>
+      <div className="rounded-lg overflow-hidden" style={{ background: 'var(--surface)' }}>
         <table className="w-full text-sm">
           <thead>
             <tr style={{ borderBottom: '1px solid var(--line)' }}>
@@ -37,7 +37,7 @@ export default async function ClientesPage() {
                 <td className="px-4 py-3 font-medium">{c.cliente_nombre}</td>
                 <td className="px-4 py-3 text-right" style={{ color: 'var(--muted)' }}>{c.total_despachados}</td>
                 <td className="px-4 py-3 text-right" style={{ color: 'var(--muted)' }}>{c.total_retirados}</td>
-                <td className="px-4 py-3 text-right font-semibold" style={{ color: c.saldo_deuda > 0 ? 'var(--brand)' : 'var(--olive)' }}>{c.saldo_deuda}</td>
+                <td className="px-4 py-3 text-right font-bold" style={{ color: c.saldo_deuda > 0 ? 'var(--green-dark)' : 'var(--green)' }}>{c.saldo_deuda}</td>
               </tr>
             ))}
             {clientes.length === 0 && !error && (
