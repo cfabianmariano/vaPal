@@ -13,10 +13,20 @@
   --blue-light: #3b8ea8;
   --amber: #c49a3c;
   --red: #b04040;
+
+  /* Aliases para compatibilidad con chofer */
+  --brand: #2a9d6e;
+  --brand-soft: rgba(42,157,110,.12);
+  --steel: #2c6382;
+  --steel-soft: #b8d0dc;
+  --olive: #1a7a52;
+  --olive-soft: #b0d4be;
+  --amber-soft: #e8d6a0;
 }
 
 body {
   font-family: 'Inter', sans-serif;
+  font-size: 15px;
   background: var(--bg);
   color: var(--ink);
   -webkit-font-smoothing: antialiased;
