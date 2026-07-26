@@ -1,11 +1,11 @@
 {
-  "name": "VaPal — Trazabilidad de pallets",
+  "name": "VaPal",
   "short_name": "VaPal",
-  "description": "Cadena de custodia digital para logística inversa de pallets",
-  "start_url": "/ruta",
+  "description": "Trazabilidad de pallets",
+  "start_url": "/",
   "display": "standalone",
-  "background_color": "#B4BEC4",
-  "theme_color": "#1E2A38",
+  "background_color": "#1b3a4b",
+  "theme_color": "#1b3a4b",
   "icons": [
     {
       "src": "/icon-192.png",
