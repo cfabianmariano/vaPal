@@ -33,6 +33,8 @@ export default function LoginPage() {
       const { data: profile } = await supabase.from('users').select('role').eq('id', user.id).single()
       if (profile?.role === 'chofer') {
         router.push('/ruta')
+      } else if (profile?.role === 'transportista_admin') {
+        router.push('/transportista')
       } else {
         router.push('/dashboard')
       }
