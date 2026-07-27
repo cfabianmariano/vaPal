@@ -231,7 +231,7 @@ export default function TransportistaClientesPage() {
                     <span>{cli.vales.length} vale{cli.vales.length !== 1 ? 's' : ''} · {cli.totalRetirado}/{cli.totalAutorizado} pallets</span>
                     {minDias !== null && (
                       <span className="px-2 py-0.5 rounded font-semibold"
-                        style={urgenciaColor(minDias)}>
+                        style={{ background: urgenciaColor(minDias).bg, color: urgenciaColor(minDias).text }}>
                         {minDias < 0 ? `Vencido (${Math.abs(minDias)}d)` : `${minDias}d`}
                       </span>
                     )}
