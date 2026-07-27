@@ -1,10 +1,10 @@
 export type UserRole = 'dueno' | 'intermediario' | 'transportista_admin' | 'chofer'
-export type ValeEstado = 'sin_asignar' | 'asignado' | 'en_curso' | 'parcial' | 'completo' | 'cerrado'
+export type ValeEstado = 'sin_asignar' | 'asignado' | 'en_curso' | 'parcial' | 'completo' | 'cerrado' | 'revertido'
 export type ValeLineaEstado = 'pendiente' | 'parcial' | 'completa'
 export type RemitoEstado = 'firmado' | 'no_conformado'
-
 export interface Organization {
   id: string; nombre: string; cuit: string | null; created_at: string
+  dias_vencimiento_default: number
 }
 export interface User {
   id: string; organization_id: string; role: UserRole; nombre: string
@@ -33,7 +33,8 @@ export interface Vale {
   id: string; numero: string; organization_id: string
   transportista_id: string | null; camion_id: string | null
   estado: ValeEstado; created_by: string | null; fecha_creacion: string
-  fecha_cierre: string | null; notas: string | null
+  fecha_cierre: string | null; fecha_vencimiento: string | null
+  notas: string | null
 }
 export interface ValeLinea {
   id: string; vale_id: string; cliente_id: string
@@ -55,7 +56,15 @@ export interface Remito {
   estadia_minutos: number | null; offline: boolean; synced_at: string | null
   created_at: string
 }
+// Vista vieja — mantener para compatibilidad
 export interface CuentaCorriente {
   cliente_id: string; organization_id: string; cliente_nombre: string
   total_despachados: number; total_retirados: number; saldo_deuda: number
+}
+// Vista nueva — BLOQUE 0: incluye reservado y disponible
+export interface CuentaCorrienteCompleta {
+  cliente_id: string; organization_id: string; cliente_nombre: string
+  codigo_erp: string | null; deuda_total: number; cantidad_retirada: number
+  saldo_pendiente: number; cantidad_reservada: number; cantidad_disponible: number
+  fecha_mas_antigua: string | null
 }
