@@ -102,7 +102,7 @@ export default function TransportistaValesPage() {
       .order('fecha_vencimiento', { ascending: true, nullsFirst: false })
 
     if (!error && data) {
-      setVales(data as Vale[])
+      setVales(data as unknown as Vale[])
     }
     setLoading(false)
   }
