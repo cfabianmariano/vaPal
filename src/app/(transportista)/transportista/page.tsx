@@ -1,450 +1,264 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { createClient } from '@supabase/supabase-js'
+import { useState, useEffect } from 'react'
+import { createClient } from '@/lib/supabase-browser'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
-
-interface HojaConDetalles {
+interface ValeLinea {
   id: string
-  fecha: string
+  cantidad_autorizada: number
+  cantidad_retirada: number
   estado: string
+  clientes: {
+    nombre: string
+    direccion: string
+    localidad: string
+    contacto_nombre: string
+    contacto_telefono: string
+  }
+}
+
+interface Vale {
+  id: string
+  numero: string
+  estado: string
+  fecha_creacion: string
+  fecha_vencimiento: string | null
   notas: string | null
-  created_at: string
-  chofer: { nombre: string } | null
-  camion: { patente: string; descripcion: string | null } | null
-  visitas: {
-    id: string
-    cantidad_planificada: number
-    cantidad_retirada: number
-    estado: string
-    orden: number
-    cliente: {
-      nombre: string
-      localidad: string | null
-      direccion: string | null
-      contacto_nombre: string | null
-      contacto_telefono: string | null
-    } | null
-  }[]
+  vale_lineas: ValeLinea[]
 }
 
-const estadoChip: Record<string, { bg: string; color: string; label: string }> = {
-  borrador: { bg: 'var(--surface-2)', color: 'var(--muted)', label: 'Borrador' },
-  definitiva: { bg: '#d4edda', color: 'var(--green-dark)', label: 'Definitiva' },
-  en_ejecucion: { bg: '#fff3cd', color: '#856404', label: 'En ejecución' },
-  finalizada: { bg: '#e0eaf0', color: 'var(--ink)', label: 'Finalizada' },
+function diasRestantes(fechaVenc: string | null): number | null {
+  if (!fechaVenc) return null
+  const hoy = new Date()
+  hoy.setHours(0, 0, 0, 0)
+  const venc = new Date(fechaVenc)
+  venc.setHours(0, 0, 0, 0)
+  return Math.ceil((venc.getTime() - hoy.getTime()) / (1000 * 60 * 60 * 24))
 }
 
-export default function HojasPage() {
-  const router = useRouter()
-  const [hojas, setHojas] = useState<HojaConDetalles[]>([])
+function urgenciaColor(dias: number | null): { bg: string; text: string; label: string } {
+  if (dias === null) return { bg: '#dce6ec', text: '#6a8494', label: 'Sin venc.' }
+  if (dias < 0) return { bg: '#b04040', text: '#fff', label: `Vencido (${Math.abs(dias)}d)` }
+  if (dias <= 3) return { bg: '#b04040', text: '#fff', label: `${dias}d restantes` }
+  if (dias <= 7) return { bg: '#c49a3c', text: '#fff', label: `${dias}d restantes` }
+  return { bg: '#2a9d6e', text: '#fff', label: `${dias}d restantes` }
+}
+
+function estadoChip(estado: string) {
+  const colores: Record<string, { bg: string; text: string }> = {
+    sin_asignar: { bg: '#dce6ec', text: '#6a8494' },
+    asignado: { bg: '#2c6382', text: '#fff' },
+    en_curso: { bg: '#c49a3c', text: '#fff' },
+    parcial: { bg: '#c49a3c', text: '#fff' },
+    completo: { bg: '#2a9d6e', text: '#fff' },
+    cerrado: { bg: '#6a8494', text: '#fff' },
+  }
+  const c = colores[estado] || colores.sin_asignar
+  const label = estado.replace('_', ' ')
+  return (
+    <span className="px-2 py-0.5 rounded text-xs font-semibold" style={{ background: c.bg, color: c.text }}>
+      {label}
+    </span>
+  )
+}
+
+export default function TransportistaValesPage() {
+  const [vales, setVales] = useState<Vale[]>([])
   const [loading, setLoading] = useState(true)
-  const [filtro, setFiltro] = useState<'activas' | 'todas'>('activas')
   const [expandido, setExpandido] = useState<string | null>(null)
+  const [filtro, setFiltro] = useState<'activos' | 'todos'>('activos')
+  const supabase = createClient()
 
   useEffect(() => {
-    cargarHojas()
-  }, [filtro])
+    cargarVales()
+  }, [])
 
-  const cargarHojas = async () => {
+  async function cargarVales() {
     setLoading(true)
 
-    // Get transportista_id of logged-in user
+    // Obtener transportista_id del usuario
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
 
-    const { data: userData } = await supabase
+    const { data: perfil } = await supabase
       .from('users')
       .select('transportista_id')
       .eq('id', user.id)
       .single()
 
-    if (!userData?.transportista_id) return
+    if (!perfil?.transportista_id) return
 
-    let query = supabase
-      .from('hojas_ruta')
+    const { data, error } = await supabase
+      .from('vales')
       .select(`
-        id, fecha, estado, notas, created_at,
-        chofer:users!hojas_ruta_chofer_id_fkey(nombre),
-        camion:camiones(patente, descripcion),
-        visitas:hoja_ruta_visitas(
-          id, cantidad_planificada, cantidad_retirada, estado, orden,
-          cliente:clientes(nombre, localidad, direccion, contacto_nombre, contacto_telefono)
+        id, numero, estado, fecha_creacion, fecha_vencimiento, notas,
+        vale_lineas (
+          id, cantidad_autorizada, cantidad_retirada, estado,
+          clientes ( nombre, direccion, localidad, contacto_nombre, contacto_telefono )
         )
       `)
-      .eq('transportista_id', userData.transportista_id)
-      .order('fecha', { ascending: false })
-
-    if (filtro === 'activas') {
-      query = query.in('estado', ['borrador', 'definitiva', 'en_ejecucion'])
-    }
-
-    const { data, error } = await query
+      .eq('transportista_id', perfil.transportista_id)
+      .neq('estado', 'revertido')
+      .order('fecha_vencimiento', { ascending: true, nullsFirst: false })
 
     if (!error && data) {
-      // Sort visitas by orden within each hoja
-      const sorted = (data as unknown as HojaConDetalles[]).map((h) => ({
-        ...h,
-        visitas: [...(h.visitas || [])].sort((a, b) => a.orden - b.orden),
-      }))
-      setHojas(sorted)
+      setVales(data as unknown as Vale[])
     }
     setLoading(false)
   }
 
-  const hoy = new Date().toISOString().split('T')[0]
+  const valesFiltrados = filtro === 'activos'
+    ? vales.filter(v => !['completo', 'cerrado'].includes(v.estado))
+    : vales
 
-  // KPIs
-  const borradores = hojas.filter((h) => h.estado === 'borrador').length
-  const activas = hojas.filter((h) => ['definitiva', 'en_ejecucion'].includes(h.estado)).length
-  const hoyCount = hojas.filter((h) => h.fecha === hoy && h.estado !== 'borrador').length
-  const totalPallets = hojas
-    .filter((h) => ['definitiva', 'en_ejecucion'].includes(h.estado))
-    .reduce((sum, h) => sum + h.visitas.reduce((s, v) => s + v.cantidad_planificada, 0), 0)
+  // KPIs básicos
+  const valesActivos = vales.filter(v => !['completo', 'cerrado'].includes(v.estado))
+  const totalPendiente = valesActivos.reduce((sum, v) =>
+    sum + v.vale_lineas.reduce((s, l) => s + (l.cantidad_autorizada - l.cantidad_retirada), 0), 0)
+  const valesVencidos = valesActivos.filter(v => {
+    const d = diasRestantes(v.fecha_vencimiento)
+    return d !== null && d < 0
+  }).length
+  const valesUrgentes = valesActivos.filter(v => {
+    const d = diasRestantes(v.fecha_vencimiento)
+    return d !== null && d >= 0 && d <= 3
+  }).length
 
-  const confirmarHoja = async (hojaId: string) => {
-    const { error } = await supabase
-      .from('hojas_ruta')
-      .update({ estado: 'definitiva', updated_at: new Date().toISOString() })
-      .eq('id', hojaId)
-      .eq('estado', 'borrador')
-
-    if (!error) cargarHojas()
-  }
-
-  const eliminarBorrador = async (hojaId: string) => {
-    if (!confirm('¿Eliminar este borrador? Se liberan las cantidades reservadas.')) return
-
-    // CASCADE deletes visitas and imputaciones
-    const { error } = await supabase
-      .from('hojas_ruta')
-      .delete()
-      .eq('id', hojaId)
-      .eq('estado', 'borrador')
-
-    if (!error) cargarHojas()
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <span className="text-sm" style={{ color: '#6a8494' }}>Cargando vales...</span>
+      </div>
+    )
   }
 
   return (
-    <div style={{ maxWidth: 900, margin: '0 auto' }}>
-      {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '0.75rem' }}>
-        <h1 style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--ink)', margin: 0 }}>
-          Hojas de ruta
-        </h1>
-        <button
-          onClick={() => router.push('/transportista/hojas/nueva')}
+    <div>
+      <h1 className="text-xl font-bold mb-6" style={{ color: 'var(--ink)' }}>Vales asignados</h1>
+
+      {/* KPIs */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+        <KpiCard label="Vales activos" valor={valesActivos.length} />
+        <KpiCard label="Pallets pendientes" valor={totalPendiente} />
+        <KpiCard label="Vencidos" valor={valesVencidos} color={valesVencidos > 0 ? '#b04040' : undefined} />
+        <KpiCard label="Urgentes (≤3d)" valor={valesUrgentes} color={valesUrgentes > 0 ? '#c49a3c' : undefined} />
+      </div>
+
+      {/* Filtro */}
+      <div className="flex gap-2 mb-4">
+        <button onClick={() => setFiltro('activos')}
+          className="px-3 py-1.5 rounded text-sm font-medium transition-colors"
           style={{
-            padding: '0.5rem 1rem',
-            background: 'var(--green)',
-            color: '#fff',
-            border: 'none',
-            borderRadius: 6,
-            fontWeight: 600,
-            fontSize: '0.85rem',
-            cursor: 'pointer',
-          }}
-        >
-          + Nueva hoja
+            background: filtro === 'activos' ? '#2c6382' : '#dce6ec',
+            color: filtro === 'activos' ? '#fff' : '#6a8494',
+          }}>
+          Activos
+        </button>
+        <button onClick={() => setFiltro('todos')}
+          className="px-3 py-1.5 rounded text-sm font-medium transition-colors"
+          style={{
+            background: filtro === 'todos' ? '#2c6382' : '#dce6ec',
+            color: filtro === 'todos' ? '#fff' : '#6a8494',
+          }}>
+          Todos
         </button>
       </div>
 
-      {/* KPIs */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '0.75rem', marginBottom: '1.25rem' }}>
-        {[
-          { label: 'Borradores', value: borradores, color: 'var(--muted)' },
-          { label: 'Activas', value: activas, color: 'var(--green)' },
-          { label: 'Hoy', value: hoyCount, color: 'var(--blue)' },
-          { label: 'Pallets plan.', value: totalPallets, color: 'var(--ink)' },
-        ].map((kpi) => (
-          <div
-            key={kpi.label}
-            style={{
-              background: 'var(--surface)',
-              borderRadius: 8,
-              padding: '0.75rem',
-              textAlign: 'center',
-              border: '1px solid var(--line)',
-            }}
-          >
-            <div style={{ fontSize: '1.5rem', fontWeight: 700, color: kpi.color }}>{kpi.value}</div>
-            <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>{kpi.label}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* Filter toggle */}
-      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
-        {(['activas', 'todas'] as const).map((f) => (
-          <button
-            key={f}
-            onClick={() => setFiltro(f)}
-            style={{
-              padding: '0.35rem 0.75rem',
-              fontSize: '0.8rem',
-              fontWeight: filtro === f ? 600 : 400,
-              background: filtro === f ? 'var(--ink)' : 'var(--surface)',
-              color: filtro === f ? '#fff' : 'var(--muted)',
-              border: '1px solid var(--line)',
-              borderRadius: 6,
-              cursor: 'pointer',
-            }}
-          >
-            {f === 'activas' ? 'Activas' : 'Todas'}
-          </button>
-        ))}
-      </div>
-
-      {/* List */}
-      {loading ? (
-        <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--muted)' }}>Cargando...</div>
-      ) : hojas.length === 0 ? (
-        <div
-          style={{
-            textAlign: 'center',
-            padding: '3rem 1rem',
-            background: 'var(--surface)',
-            borderRadius: 8,
-            border: '1px solid var(--line)',
-            color: 'var(--muted)',
-          }}
-        >
-          <p style={{ marginBottom: '1rem' }}>No hay hojas de ruta {filtro === 'activas' ? 'activas' : ''}</p>
-          <button
-            onClick={() => router.push('/transportista/hojas/nueva')}
-            style={{
-              padding: '0.5rem 1rem',
-              background: 'var(--green)',
-              color: '#fff',
-              border: 'none',
-              borderRadius: 6,
-              fontWeight: 600,
-              fontSize: '0.85rem',
-              cursor: 'pointer',
-            }}
-          >
-            Crear la primera
-          </button>
-        </div>
+      {/* Lista de vales */}
+      {valesFiltrados.length === 0 ? (
+        <p className="text-sm py-8 text-center" style={{ color: '#6a8494' }}>
+          {filtro === 'activos' ? 'No hay vales activos.' : 'No hay vales asignados.'}
+        </p>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-          {hojas.map((hoja) => {
-            const isExpanded = expandido === hoja.id
-            const totalPlan = hoja.visitas.reduce((s, v) => s + v.cantidad_planificada, 0)
-            const totalRet = hoja.visitas.reduce((s, v) => s + v.cantidad_retirada, 0)
-            const chip = estadoChip[hoja.estado] || estadoChip.borrador
-            const fechaStr = new Date(hoja.fecha + 'T12:00:00').toLocaleDateString('es-AR', {
-              weekday: 'short',
-              day: 'numeric',
-              month: 'short',
-            })
-            const esHoy = hoja.fecha === hoy
+        <div className="flex flex-col gap-3">
+          {valesFiltrados.map(vale => {
+            const dias = diasRestantes(vale.fecha_vencimiento)
+            const urg = urgenciaColor(dias)
+            const totalAut = vale.vale_lineas.reduce((s, l) => s + l.cantidad_autorizada, 0)
+            const totalRet = vale.vale_lineas.reduce((s, l) => s + l.cantidad_retirada, 0)
+            const pctAvance = totalAut > 0 ? Math.round((totalRet / totalAut) * 100) : 0
+            const abierto = expandido === vale.id
 
             return (
-              <div
-                key={hoja.id}
-                style={{
-                  background: 'var(--surface)',
-                  borderRadius: 8,
-                  border: `1px solid ${esHoy ? 'var(--green)' : 'var(--line)'}`,
-                  overflow: 'hidden',
-                }}
-              >
-                {/* Header row */}
-                <button
-                  onClick={() => setExpandido(isExpanded ? null : hoja.id)}
-                  style={{
-                    width: '100%',
-                    padding: '0.75rem 1rem',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.75rem',
-                    background: 'none',
-                    border: 'none',
-                    cursor: 'pointer',
-                    textAlign: 'left',
-                    flexWrap: 'wrap',
-                  }}
-                >
-                  {/* Date */}
-                  <div style={{ minWidth: 80 }}>
-                    <div style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--ink)' }}>{fechaStr}</div>
-                    {esHoy && <div style={{ fontSize: '0.7rem', color: 'var(--green)', fontWeight: 600 }}>HOY</div>}
-                  </div>
+              <div key={vale.id} className="rounded-lg overflow-hidden"
+                style={{ background: 'var(--surface)', border: '1px solid var(--line)' }}>
 
-                  {/* Chofer + camión */}
-                  <div style={{ flex: 1, minWidth: 120 }}>
-                    <div style={{ fontSize: '0.85rem', color: 'var(--ink)' }}>
-                      {hoja.chofer?.nombre || '—'}
-                    </div>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>
-                      {hoja.camion ? `${hoja.camion.patente}` : 'Sin camión'}
-                      {' · '}{hoja.visitas.length} visita{hoja.visitas.length !== 1 ? 's' : ''}
+                {/* Cabecera del vale */}
+                <button onClick={() => setExpandido(abierto ? null : vale.id)}
+                  className="w-full text-left p-4 flex flex-col gap-2">
+
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-sm" style={{ color: 'var(--ink)' }}>{vale.numero}</span>
+                    <div className="flex items-center gap-2">
+                      {estadoChip(vale.estado)}
+                      <span className="px-2 py-0.5 rounded text-xs font-semibold"
+                        style={{ background: urg.bg, color: urg.text }}>
+                        {urg.label}
+                      </span>
                     </div>
                   </div>
 
-                  {/* Quantities */}
-                  <div style={{ textAlign: 'right', minWidth: 80 }}>
-                    <div style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--ink)' }}>
-                      {totalRet}/{totalPlan}
-                    </div>
-                    <div style={{ fontSize: '0.7rem', color: 'var(--muted)' }}>pallets</div>
+                  <div className="flex items-center justify-between text-xs" style={{ color: 'var(--muted)' }}>
+                    <span>{vale.vale_lineas.length} cliente{vale.vale_lineas.length !== 1 ? 's' : ''}</span>
+                    <span>{totalRet} / {totalAut} pallets ({pctAvance}%)</span>
                   </div>
 
-                  {/* Estado chip */}
-                  <span
-                    style={{
-                      padding: '0.2rem 0.5rem',
-                      borderRadius: 4,
-                      fontSize: '0.7rem',
-                      fontWeight: 600,
-                      background: chip.bg,
-                      color: chip.color,
-                    }}
-                  >
-                    {chip.label}
-                  </span>
+                  {/* Barra de progreso */}
+                  <div className="w-full h-2 rounded-full overflow-hidden" style={{ background: 'var(--line)' }}>
+                    <div className="h-full rounded-full transition-all"
+                      style={{ width: `${pctAvance}%`, background: pctAvance >= 100 ? '#2a9d6e' : '#2c6382' }} />
+                  </div>
 
-                  {/* Expand arrow */}
-                  <span style={{ fontSize: '0.8rem', color: 'var(--muted)', transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>
-                    ▼
-                  </span>
+                  <div className="flex items-center justify-between text-xs" style={{ color: 'var(--muted)' }}>
+                    <span>Creado: {new Date(vale.fecha_creacion).toLocaleDateString('es-AR')}</span>
+                    {vale.fecha_vencimiento && (
+                      <span>Vence: {new Date(vale.fecha_vencimiento).toLocaleDateString('es-AR')}</span>
+                    )}
+                  </div>
                 </button>
 
-                {/* Expanded detail */}
-                {isExpanded && (
-                  <div style={{ padding: '0 1rem 1rem', borderTop: '1px solid var(--line)' }}>
-                    {/* Progress bar */}
-                    <div style={{ margin: '0.75rem 0 0.5rem' }}>
-                      <div style={{ height: 6, borderRadius: 3, background: 'var(--line)', overflow: 'hidden' }}>
-                        <div
-                          style={{
-                            height: '100%',
-                            borderRadius: 3,
-                            width: totalPlan > 0 ? `${Math.min(100, (totalRet / totalPlan) * 100)}%` : '0%',
-                            background: totalRet >= totalPlan ? 'var(--green)' : 'var(--blue)',
-                            transition: 'width 0.3s',
-                          }}
-                        />
-                      </div>
+                {/* Detalle expandible: líneas del vale */}
+                {abierto && (
+                  <div className="border-t px-4 pb-4 pt-3" style={{ borderColor: 'var(--line)' }}>
+                    {vale.notas && (
+                      <p className="text-xs mb-3 italic" style={{ color: 'var(--muted)' }}>
+                        {vale.notas}
+                      </p>
+                    )}
+                    <div className="flex flex-col gap-2">
+                      {vale.vale_lineas.map(linea => {
+                        const pendiente = linea.cantidad_autorizada - linea.cantidad_retirada
+                        return (
+                          <div key={linea.id} className="p-3 rounded"
+                            style={{ background: 'var(--surface-2)' }}>
+                            <div className="flex items-start justify-between mb-1">
+                              <span className="font-semibold text-sm" style={{ color: 'var(--ink)' }}>
+                                {linea.clientes.nombre}
+                              </span>
+                              <span className="text-xs font-medium px-2 py-0.5 rounded"
+                                style={{
+                                  background: pendiente === 0 ? '#2a9d6e' : '#2c6382',
+                                  color: '#fff',
+                                }}>
+                                {pendiente === 0 ? 'Completo' : `${pendiente} pend.`}
+                              </span>
+                            </div>
+                            <div className="text-xs" style={{ color: 'var(--muted)' }}>
+                              <p>{linea.clientes.direccion}, {linea.clientes.localidad}</p>
+                              {linea.clientes.contacto_nombre && (
+                                <p className="mt-1">
+                                  {linea.clientes.contacto_nombre}
+                                  {linea.clientes.contacto_telefono && ` · ${linea.clientes.contacto_telefono}`}
+                                </p>
+                              )}
+                              <p className="mt-1">
+                                Autorizado: {linea.cantidad_autorizada} · Retirado: {linea.cantidad_retirada}
+                              </p>
+                            </div>
+                          </div>
+                        )
+                      })}
                     </div>
-
-                    {/* Visitas */}
-                    {hoja.visitas.map((v, i) => (
-                      <div
-                        key={v.id}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '0.5rem',
-                          padding: '0.5rem 0',
-                          borderBottom: i < hoja.visitas.length - 1 ? '1px solid var(--line)' : 'none',
-                        }}
-                      >
-                        {/* Order number */}
-                        <div
-                          style={{
-                            width: 24,
-                            height: 24,
-                            borderRadius: '50%',
-                            background: v.estado === 'completada' ? 'var(--green)' : v.estado === 'en_curso' ? 'var(--blue)' : 'var(--line)',
-                            color: v.estado === 'pendiente' ? 'var(--muted)' : '#fff',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            fontSize: '0.7rem',
-                            fontWeight: 600,
-                            flexShrink: 0,
-                          }}
-                        >
-                          {v.estado === 'completada' ? '✓' : v.orden}
-                        </div>
-
-                        {/* Client info */}
-                        <div style={{ flex: 1 }}>
-                          <div style={{ fontSize: '0.85rem', fontWeight: 500, color: 'var(--ink)' }}>
-                            {v.cliente?.nombre || '—'}
-                          </div>
-                          <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>
-                            {v.cliente?.localidad || ''}
-                            {v.cliente?.contacto_nombre ? ` · ${v.cliente.contacto_nombre}` : ''}
-                            {v.cliente?.contacto_telefono ? ` · ${v.cliente.contacto_telefono}` : ''}
-                          </div>
-                        </div>
-
-                        {/* Quantity */}
-                        <div style={{ textAlign: 'right' }}>
-                          <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--ink)' }}>
-                            {v.cantidad_retirada}/{v.cantidad_planificada}
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-
-                    {/* Notas */}
-                    {hoja.notas && (
-                      <div style={{ marginTop: '0.5rem', fontSize: '0.8rem', color: 'var(--muted)', fontStyle: 'italic' }}>
-                        {hoja.notas}
-                      </div>
-                    )}
-
-                    {/* Actions for borrador */}
-                    {hoja.estado === 'borrador' && (
-                      <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem' }}>
-                        <button
-                          onClick={() => confirmarHoja(hoja.id)}
-                          style={{
-                            flex: 1,
-                            padding: '0.5rem',
-                            background: 'var(--green)',
-                            color: '#fff',
-                            border: 'none',
-                            borderRadius: 6,
-                            fontWeight: 600,
-                            fontSize: '0.8rem',
-                            cursor: 'pointer',
-                          }}
-                        >
-                          Confirmar
-                        </button>
-                        <button
-                          onClick={() => router.push(`/transportista/hojas/editar/${hoja.id}`)}
-                          style={{
-                            flex: 1,
-                            padding: '0.5rem',
-                            background: 'var(--surface-2)',
-                            color: 'var(--ink)',
-                            border: '1px solid var(--line)',
-                            borderRadius: 6,
-                            fontWeight: 500,
-                            fontSize: '0.8rem',
-                            cursor: 'pointer',
-                          }}
-                        >
-                          Editar
-                        </button>
-                        <button
-                          onClick={() => eliminarBorrador(hoja.id)}
-                          style={{
-                            padding: '0.5rem 0.75rem',
-                            background: 'none',
-                            color: 'var(--red)',
-                            border: '1px solid var(--red)',
-                            borderRadius: 6,
-                            fontWeight: 500,
-                            fontSize: '0.8rem',
-                            cursor: 'pointer',
-                          }}
-                        >
-                          Eliminar
-                        </button>
-                      </div>
-                    )}
                   </div>
                 )}
               </div>
@@ -452,6 +266,15 @@ export default function HojasPage() {
           })}
         </div>
       )}
+    </div>
+  )
+}
+
+function KpiCard({ label, valor, color }: { label: string; valor: number; color?: string }) {
+  return (
+    <div className="rounded-lg p-4" style={{ background: 'var(--surface)', border: '1px solid var(--line)' }}>
+      <p className="text-xs mb-1" style={{ color: 'var(--muted)' }}>{label}</p>
+      <p className="text-2xl font-bold" style={{ color: color || 'var(--ink)' }}>{valor}</p>
     </div>
   )
 }
